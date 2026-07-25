@@ -112,11 +112,11 @@ ToggleSymmetry(*) {
 }
 
 ;
-; ===== 键盘钩子（无条件拦截，内部判断模式状态）=====
+; ===== 键盘钩子（~ 前缀让按键自然透传，内部判断双击逻辑）=====
 #InputLevel 1
 for originalKey, mappedKey in KeyMapping {
     fn := KeyHandler.Bind(originalKey)
-    Hotkey("$*" originalKey, fn)
+    Hotkey("~$*" originalKey, fn)
 }
 #InputLevel 0
 
@@ -132,36 +132,32 @@ KeyHandler(keyName, *) {
         return
     }
 
-    ; 如果模式已关闭，直接透传原键（不拦截）
+    ; 如果模式已关闭，直接返回（按键已通过 ~ 前缀自然透传）
     if !SymmetryActive {
-        SendInput("{Blind}{" keyName "}")
         return
     }
 
-    ; 组合键时跳过（使用逻辑状态检测，兼容 Ditto 等软件发送的模拟按键）
-    if GetKeyState("Ctrl") || GetKeyState("Alt") || GetKeyState("Shift") {
-        SendInput("{Blind}{" keyName "}")
+    ; 组合键时跳过（Ctrl/Alt/Win 组合键透传，Shift 保留以支持双击映射大写）
+    if GetKeyState("Ctrl") || GetKeyState("Alt") {
         return
     }
     if GetKeyState("LWin") || GetKeyState("RWin") {
-        SendInput("{Blind}{" keyName "}")
         return
     }
 
     currentTime := A_TickCount
 
-    ; 相同键且在阈值内 → 双击：退格 + 输出对称键
+    ; 相同键且在阈值内 → 双击：退格两次（移除两次透传的字符）+ 输出对称键
     if (keyName = lastKey && (currentTime - lastTime) <= DOUBLE_CLICK_TIME) {
         mappedKey := KeyMapping[keyName]
-        SendInput("{Blind}{Backspace}{" mappedKey "}")
+        SendInput("{Blind}{Backspace 2}{" mappedKey "}")
         UpdatePreview(keyName, mappedKey)
         lastKey := ""
         lastTime := 0
         return
     }
 
-    ; 单击（或不同键）：立即输出原键
-    SendInput("{Blind}{" keyName "}")
+    ; 单击（或不同键）：按键已通过 ~ 前缀自然透传，只需记录
     UpdatePreview(keyName, "")
     lastKey := keyName
     lastTime := currentTime
