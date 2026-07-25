@@ -18,6 +18,9 @@ global LastKey := ""
 global LastPressTime := 0
 global PreviewGui := 0
 global KeyPreviewControls := Map()  ; 物理键 → 预览控件
+global PreviewX := 0               ; 预览窗口位置
+global PreviewY := 0
+global PreviewPosInitialized := false
 
 ; ===== 对称键映射表 =====
 global KeyMapping := Map(
@@ -44,6 +47,7 @@ try
 catch
 A_TrayMenu.Add()
 A_TrayMenu.Add("切换单手模式", ToggleSymmetry)
+A_TrayMenu.Add("显示预览窗口", TogglePreview)
 A_TrayMenu.Add("设置双击时间...", SetDoubleClickTime)
 A_TrayMenu.Add()
 A_TrayMenu.Add("退出", QuitScript)
@@ -201,19 +205,117 @@ CreatePreviewWindow() {
     }
 
     PreviewGui.Show("Hide")
+
+    ; 支持鼠标左键拖动窗口
+    OnMessage(0x0201, OnPreviewLButtonDown)  ; WM_LBUTTONDOWN
+    ; 右键弹出菜单
+    OnMessage(0x0205, OnPreviewRButtonUp)    ; WM_RBUTTONUP
+    ; 拖动结束后保存位置
+    OnMessage(0x0232, OnPreviewMoveEnd)      ; WM_EXITSIZEMOVE
 }
 
 ShowPreview() {
-    global PreviewGui
+    global PreviewGui, PreviewX, PreviewY, PreviewPosInitialized
     if (PreviewGui) {
-        PreviewGui.Show("NA")   ; NA = NoActivate
+        if !PreviewPosInitialized {
+            ; 首次显示：右下角
+            MonitorGetWorkArea(1, &workL, &workT, &workR, &workB)
+            PreviewX := workR - 200 - 20
+            PreviewY := workB - 140 - 20
+            PreviewPosInitialized := true
+        }
+        PreviewGui.Show("NA x" PreviewX " y" PreviewY)
+        try
+            A_TrayMenu.Rename("显示预览窗口", "隐藏预览窗口")
+        catch
+            {}
     }
 }
 
-HidePreview() {
+HidePreview(*) {
     global PreviewGui
     if (PreviewGui) {
         PreviewGui.Hide()
+        try
+            A_TrayMenu.Rename("隐藏预览窗口", "显示预览窗口")
+        catch
+            {}
+    }
+}
+
+; ===== 预览窗口交互 =====
+
+; 左键按下：拖动窗口
+OnPreviewLButtonDown(wParam, lParam, msg, hwnd) {
+    global PreviewGui
+    if (PreviewGui && hwnd) {
+        parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
+        if (parentHwnd = PreviewGui.Hwnd)
+            PostMessage(0xA1, 2, 0,, parentHwnd)  ; WM_NCLBUTTONDOWN, HTCAPTION
+    }
+}
+
+; 右键按下：弹出上下文菜单
+OnPreviewRButtonUp(wParam, lParam, msg, hwnd) {
+    global PreviewGui
+    if (PreviewGui && hwnd) {
+        ; 检查 hwnd 是否属于预览窗口（包括子控件）
+        parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
+        if (parentHwnd = PreviewGui.Hwnd)
+            ShowPreviewContextMenu()
+    }
+}
+
+; 拖动结束：保存位置
+OnPreviewMoveEnd(wParam, lParam, msg, hwnd) {
+    global PreviewGui, PreviewX, PreviewY, PreviewPosInitialized
+    if (PreviewGui && hwnd) {
+        parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
+        if (parentHwnd = PreviewGui.Hwnd) {
+            PreviewGui.GetPos(&PreviewX, &PreviewY)
+            PreviewPosInitialized := true
+        }
+    }
+}
+
+; 预览窗口右键菜单
+ShowPreviewContextMenu(*) {
+    previewMenu := Menu()
+    previewMenu.Add("透明度 50%", SetTransparency50)
+    previewMenu.Add("透明度 70%", SetTransparency70)
+    previewMenu.Add("透明度 90%", SetTransparency90)
+    previewMenu.Add()
+    previewMenu.Add("关闭预览", HidePreview)
+    previewMenu.Show()
+}
+
+; 设置透明度
+SetTransparency(alpha) {
+    global PreviewGui, TRANSPARENCY
+    TRANSPARENCY := alpha
+    if (PreviewGui)
+        WinSetTransparent(alpha, PreviewGui.Hwnd)
+}
+
+; 透明度快捷回调（菜单专用）
+SetTransparency50(*) {
+    SetTransparency(128)
+}
+SetTransparency70(*) {
+    SetTransparency(178)
+}
+SetTransparency90(*) {
+    SetTransparency(230)
+}
+
+; 托盘菜单：切换预览窗口
+TogglePreview(*) {
+    global PreviewGui
+    if (PreviewGui && PreviewGui.Hwnd) {
+        if DllCall("IsWindowVisible", "ptr", PreviewGui.Hwnd)
+            HidePreview()
+        else
+            ShowPreview()
     }
 }
 
