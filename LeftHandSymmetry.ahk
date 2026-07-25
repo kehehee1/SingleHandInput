@@ -123,14 +123,17 @@ for originalKey, mappedKey in KeyMapping {
 KeyHandler(keyName, *) {
     global SymmetryActive, lastKey, lastTime
 
-    ; 如果模式已关闭，直接透传原键（不拦截）
-    if !SymmetryActive {
-        SendInput("{Blind}{" keyName "}")
+    ; 与 pet 工具冲突规避：Space 长按模式让 pet 接管
+    if GetKeyState("Space", "P") {
+        return
+    }
+    ; 与 pet 工具冲突规避：CapsLock 模式让 pet 接管
+    if GetKeyState("CapsLock", "T") {
         return
     }
 
-    ; 与 pet 工具冲突规避：长按 Space 时跳过处理，让 pet 接管
-    if GetKeyState("Space", "P") {
+    ; 如果模式已关闭，直接透传原键（不拦截）
+    if !SymmetryActive {
         SendInput("{Blind}{" keyName "}")
         return
     }
@@ -141,10 +144,6 @@ KeyHandler(keyName, *) {
         return
     }
     if GetKeyState("LWin") || GetKeyState("RWin") {
-        SendInput("{Blind}{" keyName "}")
-        return
-    }
-    if GetKeyState("CapsLock", "T") {
         SendInput("{Blind}{" keyName "}")
         return
     }
