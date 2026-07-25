@@ -385,16 +385,16 @@ UpdatePreview(originalKey, mappedKey) {
     if (!PreviewGui)
         return
 
-    ; 重置所有控件颜色为各自的指位颜色
+    ; 重置所有控件颜色为各自的指位颜色，恢复标准字体
     for phyKey, ctrl in KeyPreviewControls {
         color := KeyPreviewColors.Has(phyKey) ? KeyPreviewColors[phyKey] : "c0078D7"
-        ctrl.SetFont("c" color)
+        ctrl.SetFont("s14 bold c" color)
     }
 
-    ; 高亮按下的物理键对应的预览控件（金色，避免与彩虹色冲突）
+    ; 高亮按下的物理键对应的预览控件（亮紫色+放大字体，明显区别于彩虹色）
     if (KeyPreviewControls.Has(originalKey)) {
         ctrl := KeyPreviewControls[originalKey]
-        ctrl.SetFont("cFFD700")
+        ctrl.SetFont("s16 bold cFF00FF")
         SetTimer(ResetHighlight.Bind(originalKey), -500)
     }
 
@@ -407,7 +407,7 @@ ResetHighlight(keyName) {
     if (KeyPreviewControls.Has(keyName)) {
         ctrl := KeyPreviewControls[keyName]
         color := KeyPreviewColors.Has(keyName) ? KeyPreviewColors[keyName] : "c0078D7"
-        ctrl.SetFont("c" color)
+        ctrl.SetFont("s14 bold c" color)
     }
 }
 
