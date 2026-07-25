@@ -85,6 +85,11 @@ IsSymmetryActive() {
         return false
     if GetKeyState("CapsLock", "T")
         return false
+    ; 组合键时跳过（Ctrl/Alt/Shift/Win 按住时不拦截，让组合键正常穿透）
+    if GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") || GetKeyState("Shift", "P")
+        return false
+    if GetKeyState("LWin", "P") || GetKeyState("RWin", "P")
+        return false
     return true
 }
 
