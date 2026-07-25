@@ -18,12 +18,12 @@ global LastKey := ""
 global LastPressTime := 0
 global PreviewGui := 0
 global KeyPreviewControls := Map()  ; 物理键 → 预览控件
-global PreviewX := 0               ; 预览窗口位置
 global PreviewY := 0
 global PreviewPosInitialized := false
-
-; ===== 对称键映射表 =====
 global KeyMapping := Map(
+    ; 数字行
+    "1", "0", "2", "9", "3", "8", "4", "7", "5", "6",
+    "6", "5", "7", "4", "8", "3", "9", "2", "0", "1",
     ; 上排
     "q", "p", "w", "o", "e", "i", "r", "u", "t", "y",
     "y", "t", "u", "r", "i", "e", "o", "w", "p", "q",
@@ -66,11 +66,17 @@ ToggleSymmetry(*) {
     LastPressTime := 0
     if (SymmetryActive) {
         ShowPreview()
-        A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
+        try
+            A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
+        catch
+            {}
         TraySetIcon(A_AhkPath, 1)  ; 彩色图标：开启
     } else {
         HidePreview()
-        A_TrayMenu.Rename("关闭单手模式", "切换单手模式")
+        try
+            A_TrayMenu.Rename("关闭单手模式", "切换单手模式")
+        catch
+            {}
         TraySetIcon(A_AhkPath, 2)  ; 灰色图标：关闭
     }
 }
@@ -158,14 +164,16 @@ CreatePreviewWindow() {
     PreviewGui.BackColor := "F0F0F0"
     WinSetTransparent(TRANSPARENCY, PreviewGui.Hwnd)
 
-    ; 预览键位（3行5列，显示映射目标键）
+    ; 预览键位（4行5列，显示映射目标键）
     previewKeys := [
+        ["0", "9", "8", "7", "6"],  ; 数字行映射
         ["p", "o", "i", "u", "y"],
         ["BS", "l", "k", "j", "h"],
         ["Ent", "Del", "m", "n", "b"]
     ]
     ; 物理键（对应预览位置）
     physicalKeys := [
+        ["1", "2", "3", "4", "5"],  ; 数字行物理键
         ["q", "w", "e", "r", "t"],
         ["a", "s", "d", "f", "g"],
         ["z", "x", "c", "v", "b"]
@@ -187,21 +195,21 @@ CreatePreviewWindow() {
 
     ; 按键行
     PreviewGui.SetFont("s14 bold", "Consolas")
-    Loop 3 {
+    Loop 4 {
         row := A_Index - 1
         Loop 5 {
             col := A_Index - 1
             x := startX + col * cellW
             ; 下排按键前插入指位行
-            if (row = 2) {
+            if (row = 3) {
                 ; 下排指位提示
                 PreviewGui.SetFont("s8", "Consolas")
                 fx := startX + col * cellW
-                fy := startY + 18 + 2 * cellH
+                fy := startY + 18 + 3 * cellH
                 PreviewGui.Add("Text", "x" fx " y" fy " w" cellW " h14 Center c808080", bottomFingerNums[col + 1])
                 PreviewGui.SetFont("s14 bold", "Consolas")
             }
-            y := startY + 18 + row * cellH + (row >= 2 ? 16 : 0)
+            y := startY + 18 + row * cellH + (row >= 3 ? 16 : 0)
             key := previewKeys[row + 1][col + 1]
             phyKey := physicalKeys[row + 1][col + 1]
             ctrl := PreviewGui.Add("Text", "x" x " y" y " w" cellW " h" cellH " Center c0078D7", key)
