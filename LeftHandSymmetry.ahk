@@ -25,11 +25,11 @@ global KeyMapping := Map(
     "q", "p", "w", "o", "e", "i", "r", "u", "t", "y",
     "y", "t", "u", "r", "i", "e", "o", "w", "p", "q",
     ; 中排
-    "a", "'", "s", "l", "d", "k", "f", "j", "g", "h",
+    "a", "Backspace", "s", "l", "d", "k", "f", "j", "g", "h",
     "h", "g", "j", "f", "k", "d", "l", "s", "'", "a",
-    ; 下排（B 不映射，V↔N  C↔M  X↔,  Z↔.）
-    "z", ".", "x", ",", "c", "m", "v", "n",
-    "n", "v", "m", "c", ",", "x", ".", "z"
+    ; 下排（B 不映射，V↔N  C↔M  X→Del  Z→Enter）
+    "z", "Enter", "x", "Delete", "c", "m", "v", "n",
+    "n", "v", "m", "c", "Delete", "x", "Enter", "z"
 )
 
 ; ===== 初始化 =====
@@ -138,8 +138,8 @@ CreatePreviewWindow() {
     ; 预览键位（3行5列，显示映射目标键）
     previewKeys := [
         ["p", "o", "i", "u", "y"],
-        ["'", "l", "k", "j", "h"],
-        [".", ",", "m", "n", "b"]
+        ["BS", "l", "k", "j", "h"],
+        ["Ent", "Del", "m", "n", "b"]
     ]
     ; 物理键（对应预览位置）
     physicalKeys := [
