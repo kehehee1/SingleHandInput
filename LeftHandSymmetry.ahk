@@ -74,7 +74,14 @@ ToggleSymmetry(*) {
 ; 判断是否处于单手模式（供 HotIf 使用）
 IsSymmetryActive() {
     global SymmetryActive
-    return SymmetryActive
+    if !SymmetryActive
+        return false
+    ; 与 pet 工具冲突规避：Space/CapsLock 按下时让 pet 接管
+    if GetKeyState("Space", "P")
+        return false
+    if GetKeyState("CapsLock", "T")
+        return false
+    return true
 }
 
 ; ===== 键盘钩子 =====
@@ -90,6 +97,10 @@ for originalKey, mappedKey in KeyMapping {
 
 KeyHandler(keyName, *) {
     global LastKey, LastPressTime
+
+    ; 与 pet 工具冲突规避：长按 Space 时跳过处理，让 pet 接管
+    if GetKeyState("Space", "P")
+        return
 
     currentTime := A_TickCount
 
@@ -115,6 +126,9 @@ SingleKeyTimeout(keyName) {
     global LastKey, LastPressTime, SymmetryActive
     ; 如果模式已关闭，忽略残留定时器
     if (!SymmetryActive)
+        return
+    ; 与 pet 工具冲突规避：长按 Space 时跳过处理
+    if GetKeyState("Space", "P")
         return
     if (LastKey = keyName && LastPressTime > 0) {
         SendInput("{Blind}{" keyName "}")
