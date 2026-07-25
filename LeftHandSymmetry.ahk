@@ -10,8 +10,8 @@
 ; ===== 配置区域 =====
 global DOUBLE_CLICK_TIME := 220        ; 双击判定时间（毫秒）
 global SYMMETRY_HOTKEY := "Alt+R"   ; 切换单手模式的热键
-global PREVIEW_WIN_WIDTH := 120         ; 预览窗口宽度
-global PREVIEW_WIN_HEIGHT := 70         ; 预览窗口高度
+global PREVIEW_WIN_WIDTH := 352         ; 预览窗口宽度
+global PREVIEW_WIN_HEIGHT := 120        ; 预览窗口高度
 global OFFSET_X := 20                   ; 光标偏移量（向右）
 global OFFSET_Y := 30                   ; 光标偏移量（向下）
 global TRANSPARENCY := 220              ; 窗口透明度（0=全透, 255=不透）
@@ -21,8 +21,8 @@ global SymmetryActive := false
 global LastKey := ""
 global LastPressTime := 0
 global PreviewGui := 0
-global ctrlMapped := 0
-global ctrlOriginal := 0
+; 左手键盘布局（仅左侧按键）
+global LeftKeys := ["q","w","e","r","t","a","s","d","f","g","z","x","c","v","b"]
 
 ; ===== 对称键映射表 =====
 global KeyMapping := Map(
@@ -39,8 +39,6 @@ global KeyMapping := Map(
 
 ; ===== 初始化 =====
 CreatePreviewWindow()
-UpdatePosition()
-SetTimer(UpdatePosition, 100)   ; 每100ms刷新窗口位置
 
 ; ===== 托盘菜单 =====
 try
@@ -70,9 +68,11 @@ ToggleSymmetry(*) {
     if (SymmetryActive) {
         ShowPreview()
         A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
+        TraySetIcon(A_AhkPath, 1)  ; 彩色图标：开启
     } else {
         HidePreview()
         A_TrayMenu.Rename("关闭单手模式", "切换单手模式")
+        TraySetIcon(A_AhkPath, 2)  ; 灰色图标：关闭
     }
 }
 
@@ -134,24 +134,15 @@ HotIf()
 
 ; ===== 预览窗口 =====
 CreatePreviewWindow() {
-    global PreviewGui, ctrlMapped, ctrlOriginal
+    global PreviewGui
 
     PreviewGui := Gui("+AlwaysOnTop +ToolWindow -Caption +Border +Owner", "KeyPreview")
     PreviewGui.BackColor := "F0F0F0"
     WinSetTransparent(TRANSPARENCY, PreviewGui.Hwnd)
 
-    ; 映射键（大字，粗体）
-    PreviewGui.SetFont("s16 bold", "Segoe UI")
-    ctrlMapped := PreviewGui.Add("Text", "x10 y5 w100 h30 Center BackgroundTrans cBlue", "")
-
-    ; 原始键（小字）
-    PreviewGui.SetFont("s9", "Segoe UI")
-    ctrlOriginal := PreviewGui.Add("Text", "x10 y38 w100 h20 Center BackgroundTrans cGray", "")
-
-    ; 状态标签
-    PreviewGui.SetFont("s7", "Segoe UI")
-    PreviewGui.Add("Text", "x10 y55 w100 h12 Center BackgroundTrans cGray", "单手模式")
-
+    PreviewGui.SetFont("s14 bold", "Consolas")
+    text := "p  o  i  u  y" . "`n" . " '  l  k  j  h" . "`n" . " .  ,  m  n  b"
+    PreviewGui.Add("Text", "x15 y15 Center c0078D7", text)
     PreviewGui.Show("Hide")
 }
 
@@ -170,59 +161,12 @@ HidePreview() {
 }
 
 UpdatePreview(originalKey, mappedKey) {
-    global ctrlMapped, ctrlOriginal
-
-    if (!ctrlMapped || !ctrlOriginal)
-        return
-
-    if (mappedKey != "") {
-        ctrlMapped.Text := mappedKey
-        ctrlMapped.SetFont("cBlue")
-        ctrlOriginal.Text := "← " originalKey
-    } else {
-        ctrlMapped.Text := originalKey
-        ctrlMapped.SetFont("cBlack")
-        ctrlOriginal.Text := ""
-    }
-
+    global PreviewGui
     if (PreviewGui)
         PreviewGui.Show("NA")
 }
 
-; 根据光标/插入符位置更新窗口位置
-UpdatePosition() {
-    global PreviewGui
-    if (!PreviewGui || !SymmetryActive)
-        return
 
-    ; 尝试获取文本插入符位置
-    CoordMode("Caret", "Screen")
-    caretX := 0, caretY := 0
-    try {
-        DllCall("GetCaretPos", "Int*", &caretX, "Int*", &caretY)
-    }
-
-    ; 如果获取失败，使用鼠标位置
-    if (caretX = 0 && caretY = 0) {
-        CoordMode("Mouse", "Screen")
-        MouseGetPos(&caretX, &caretY)
-    }
-
-    ; 计算窗口位置
-    winX := caretX + OFFSET_X
-    winY := caretY + OFFSET_Y
-
-    ; 边界检测
-    try {
-        MonitorGetWorkArea(,, &monRight, &monBottom)
-        if (winX + PREVIEW_WIN_WIDTH > monRight)
-            winX := monRight - PREVIEW_WIN_WIDTH - 10
-        if (winY + PREVIEW_WIN_HEIGHT > monBottom)
-            winY := monBottom - PREVIEW_WIN_HEIGHT - 10
-    }
-
-    PreviewGui.Move(winX, winY)
-}
 
 ; ===== 设置对话框 =====
 SetDoubleClickTime(*) {
