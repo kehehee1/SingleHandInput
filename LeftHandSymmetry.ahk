@@ -10,10 +10,6 @@
 ; ===== 配置区域 =====
 global DOUBLE_CLICK_TIME := 220        ; 双击判定时间（毫秒）
 global SYMMETRY_HOTKEY := "Alt+R"   ; 切换单手模式的热键
-global PREVIEW_WIN_WIDTH := 352         ; 预览窗口宽度
-global PREVIEW_WIN_HEIGHT := 120        ; 预览窗口高度
-global OFFSET_X := 20                   ; 光标偏移量（向右）
-global OFFSET_Y := 30                   ; 光标偏移量（向下）
 global TRANSPARENCY := 220              ; 窗口透明度（0=全透, 255=不透）
 
 ; ===== 全局变量 =====
@@ -21,8 +17,7 @@ global SymmetryActive := false
 global LastKey := ""
 global LastPressTime := 0
 global PreviewGui := 0
-; 左手键盘布局（仅左侧按键）
-global LeftKeys := ["q","w","e","r","t","a","s","d","f","g","z","x","c","v","b"]
+global KeyPreviewControls := Map()  ; 物理键 → 预览控件
 
 ; ===== 对称键映射表 =====
 global KeyMapping := Map(
@@ -134,15 +129,63 @@ HotIf()
 
 ; ===== 预览窗口 =====
 CreatePreviewWindow() {
-    global PreviewGui
+    global PreviewGui, KeyPreviewControls
 
     PreviewGui := Gui("+AlwaysOnTop +ToolWindow -Caption +Border +Owner", "KeyPreview")
     PreviewGui.BackColor := "F0F0F0"
     WinSetTransparent(TRANSPARENCY, PreviewGui.Hwnd)
 
+    ; 预览键位（3行5列，显示映射目标键）
+    previewKeys := [
+        ["p", "o", "i", "u", "y"],
+        ["'", "l", "k", "j", "h"],
+        [".", ",", "m", "n", "b"]
+    ]
+    ; 物理键（对应预览位置）
+    physicalKeys := [
+        ["q", "w", "e", "r", "t"],
+        ["a", "s", "d", "f", "g"],
+        ["z", "x", "c", "v", "b"]
+    ]
+    ; 指位序号（小拇指→食指 5→2）
+    fingerNums := [5, 4, 3, 2, 2]
+    ; 下排指位（z对应5, x对应3, cvb对应2）
+    bottomFingerNums := [5, 3, 2, 2, 2]
+
+    cellW := 35, cellH := 28, startX := 10, startY := 8
+
+    ; 第一行：指位序号（上排/中排共用）
+    PreviewGui.SetFont("s8", "Consolas")
+    Loop 5 {
+        col := A_Index - 1
+        x := startX + col * cellW
+        PreviewGui.Add("Text", "x" x " y" startY " w" cellW " h16 Center c808080", fingerNums[col + 1])
+    }
+
+    ; 按键行
     PreviewGui.SetFont("s14 bold", "Consolas")
-    text := "p  o  i  u  y" . "`n" . " '  l  k  j  h" . "`n" . " .  ,  m  n  b"
-    PreviewGui.Add("Text", "x15 y15 Center c0078D7", text)
+    Loop 3 {
+        row := A_Index - 1
+        Loop 5 {
+            col := A_Index - 1
+            x := startX + col * cellW
+            ; 下排按键前插入指位行
+            if (row = 2) {
+                ; 下排指位提示
+                PreviewGui.SetFont("s8", "Consolas")
+                fx := startX + col * cellW
+                fy := startY + 18 + 2 * cellH
+                PreviewGui.Add("Text", "x" fx " y" fy " w" cellW " h14 Center c808080", bottomFingerNums[col + 1])
+                PreviewGui.SetFont("s14 bold", "Consolas")
+            }
+            y := startY + 18 + row * cellH + (row >= 2 ? 16 : 0)
+            key := previewKeys[row + 1][col + 1]
+            phyKey := physicalKeys[row + 1][col + 1]
+            ctrl := PreviewGui.Add("Text", "x" x " y" y " w" cellW " h" cellH " Center c0078D7", key)
+            KeyPreviewControls[phyKey] := ctrl
+        }
+    }
+
     PreviewGui.Show("Hide")
 }
 
@@ -161,9 +204,33 @@ HidePreview() {
 }
 
 UpdatePreview(originalKey, mappedKey) {
-    global PreviewGui
-    if (PreviewGui)
-        PreviewGui.Show("NA")
+    global PreviewGui, KeyPreviewControls
+
+    if (!PreviewGui)
+        return
+
+    ; 重置所有控件颜色为默认
+    for phyKey, ctrl in KeyPreviewControls {
+        ctrl.SetFont("c0078D7")
+    }
+
+    ; 高亮按下的物理键对应的预览控件
+    if (KeyPreviewControls.Has(originalKey)) {
+        ctrl := KeyPreviewControls[originalKey]
+        ctrl.SetFont("cFF4400")
+        SetTimer(ResetHighlight.Bind(originalKey), -500)
+    }
+
+    PreviewGui.Show("NA")
+}
+
+; 500ms 后恢复高亮
+ResetHighlight(keyName) {
+    global KeyPreviewControls
+    if (KeyPreviewControls.Has(keyName)) {
+        ctrl := KeyPreviewControls[keyName]
+        ctrl.SetFont("c0078D7")
+    }
 }
 
 
