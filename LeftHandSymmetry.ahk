@@ -14,8 +14,7 @@ global TRANSPARENCY := 220              ; 窗口透明度（0=全透, 255=不透
 
 ; ===== 全局变量 =====
 global SymmetryActive := false
-global LastKey := ""
-global LastPressTime := 0
+global KeyStates := Map()  ; keyName → {pressTime, consumed}
 global PreviewGui := 0
 global KeyPreviewControls := Map()  ; 物理键 → 预览控件
 global KeyPreviewColors := Map()    ; 物理键 → 默认颜色
@@ -89,11 +88,10 @@ TrayTip "左手单手输入工具已启动", "按 " SYMMETRY_HOTKEY " 切换单�
 ; ===== 热键：切换单手模式 =====
 Hotkey("!r", ToggleSymmetry)
 ToggleSymmetry(*) {
-    global SymmetryActive, LastKey, LastPressTime
+    global SymmetryActive, KeyStates
     SymmetryActive := !SymmetryActive
     ; 清空按键状态，取消未完成的定时器
-    LastKey := ""
-    LastPressTime := 0
+    KeyStates := Map()
     if (SymmetryActive) {
         ShowPreview()
         try
@@ -121,10 +119,10 @@ IsSymmetryActive() {
         return false
     if GetKeyState("CapsLock", "T")
         return false
-    ; 组合键时跳过（Ctrl/Alt/Shift/Win 按住时不拦截，让组合键正常穿透）
-    if GetKeyState("Ctrl", "P") || GetKeyState("Alt", "P") || GetKeyState("Shift", "P")
+    ; 组合键时跳过（使用逻辑状态检测，兼容 Ditto 等软件发送的模拟按键）
+    if GetKeyState("Ctrl") || GetKeyState("Alt") || GetKeyState("Shift")
         return false
-    if GetKeyState("LWin", "P") || GetKeyState("RWin", "P")
+    if GetKeyState("LWin") || GetKeyState("RWin")
         return false
     return true
 }
@@ -141,46 +139,46 @@ for originalKey, mappedKey in KeyMapping {
 #InputLevel 0
 
 KeyHandler(keyName, *) {
-    global LastKey, LastPressTime
+    global KeyStates
 
     ; 与 pet 工具冲突规避：长按 Space 时跳过处理，让 pet 接管
     if GetKeyState("Space", "P")
         return
 
     currentTime := A_TickCount
+    state := KeyStates.Get(keyName, 0)
 
     ; 判断是否为双击（同一键且在时间阈值内）
-    if (keyName = LastKey && (currentTime - LastPressTime) <= DOUBLE_CLICK_TIME) {
-        ; 双击：输出对称键
+    if (state && (currentTime - state.pressTime) <= DOUBLE_CLICK_TIME) {
+        ; 双击：输出对称键，标记已消费防止超时回调输出原键
         mappedKey := KeyMapping[keyName]
         SendInput("{Blind}{" mappedKey "}")
         UpdatePreview(keyName, mappedKey)
-        LastKey := ""
-        LastPressTime := 0
+        state.consumed := true
         return
     }
 
     ; 第一次按下：记录并启动超时定时器
-    LastKey := keyName
-    LastPressTime := currentTime
+    KeyStates[keyName] := {pressTime: currentTime, consumed: false}
     SetTimer(() => SingleKeyTimeout(keyName), -DOUBLE_CLICK_TIME)
 }
 
 ; 超时后输出原键（单击）
 SingleKeyTimeout(keyName) {
-    global LastKey, LastPressTime, SymmetryActive
+    global KeyStates, SymmetryActive
     ; 如果模式已关闭，忽略残留定时器
     if (!SymmetryActive)
         return
     ; 与 pet 工具冲突规避：长按 Space 时跳过处理
     if GetKeyState("Space", "P")
         return
-    if (LastKey = keyName && LastPressTime > 0) {
-        SendInput("{Blind}{" keyName "}")
-        UpdatePreview(keyName, "")
-        LastKey := ""
-        LastPressTime := 0
-    }
+    state := KeyStates.Get(keyName, 0)
+    ; 已被双击消费或状态已清除，不输出原键
+    if (!state || state.consumed || !state.pressTime)
+        return
+    SendInput("{Blind}{" keyName "}")
+    UpdatePreview(keyName, "")
+    KeyStates.Delete(keyName)
 }
 
 HotIf()
