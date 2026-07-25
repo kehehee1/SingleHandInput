@@ -19,6 +19,7 @@ global LastPressTime := 0
 global PreviewGui := 0
 global KeyPreviewControls := Map()  ; 物理键 → 预览控件
 global KeyPreviewColors := Map()    ; 物理键 → 默认颜色
+global PreviewX := 0
 global PreviewY := 0
 global PreviewPosInitialized := false
 global KeyMapping := Map(
@@ -36,7 +37,35 @@ global KeyMapping := Map(
     "n", "v", "m", "c", "Delete", "x", "Enter", "z"
 )
 
+; ===== 配置文件持久化 =====
+global CONFIG_PATH := A_ScriptDir . "\LeftHandSymmetry.ini"
+
+LoadConfig() {
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized
+    if !FileExist(CONFIG_PATH)
+        return
+    DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
+    TRANSPARENCY := Integer(IniRead(CONFIG_PATH, "Settings", "Transparency", TRANSPARENCY))
+    PreviewX := Integer(IniRead(CONFIG_PATH, "Settings", "PreviewX", ""))
+    PreviewY := Integer(IniRead(CONFIG_PATH, "Settings", "PreviewY", ""))
+    posInit := IniRead(CONFIG_PATH, "Settings", "PreviewPosInitialized", "0")
+    if (posInit = "1" && PreviewX != "" && PreviewY != "")
+        PreviewPosInitialized := true
+}
+
+SaveConfig() {
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized
+    IniWrite DOUBLE_CLICK_TIME, CONFIG_PATH, "Settings", "DoubleClickTime"
+    IniWrite TRANSPARENCY, CONFIG_PATH, "Settings", "Transparency"
+    IniWrite (PreviewPosInitialized ? "1" : "0"), CONFIG_PATH, "Settings", "PreviewPosInitialized"
+    if (PreviewPosInitialized) {
+        IniWrite PreviewX, CONFIG_PATH, "Settings", "PreviewX"
+        IniWrite PreviewY, CONFIG_PATH, "Settings", "PreviewY"
+    }
+}
+
 ; ===== 初始化 =====
+LoadConfig()
 CreatePreviewWindow()
 
 ; ===== 托盘菜单 =====
@@ -305,6 +334,7 @@ OnPreviewMoveEnd(wParam, lParam, msg, hwnd) {
         if (parentHwnd = PreviewGui.Hwnd) {
             PreviewGui.GetPos(&PreviewX, &PreviewY)
             PreviewPosInitialized := true
+            SaveConfig()
         }
     }
 }
@@ -324,6 +354,7 @@ ShowPreviewContextMenu(*) {
 SetTransparency(alpha) {
     global PreviewGui, TRANSPARENCY
     TRANSPARENCY := alpha
+    SaveConfig()
     if (PreviewGui)
         WinSetTransparent(alpha, PreviewGui.Hwnd)
 }
@@ -394,6 +425,7 @@ SetDoubleClickTime(*) {
     if (result.Result = "OK" && result.Value ~= "^\d+$") {
         global DOUBLE_CLICK_TIME
         DOUBLE_CLICK_TIME := Integer(result.Value)
+        SaveConfig()
         TrayTip "已更新", "双击时间 = " DOUBLE_CLICK_TIME "ms", 1
     }
 }
@@ -401,6 +433,7 @@ SetDoubleClickTime(*) {
 ; ===== 退出清理 =====
 QuitScript(*) {
     global PreviewGui
+    SaveConfig()
     if (PreviewGui)
         PreviewGui.Destroy()
     ExitApp()
