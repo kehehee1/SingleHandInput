@@ -377,7 +377,10 @@ UpdatePreview(originalKey, mappedKey) {
         SetTimer(ResetHighlight.Bind(originalKey), -500)
     }
 
-    PreviewGui.Show("NA")
+    ; 只有窗口当前可见时才更新显示（避免右键关闭后被按键重新激活）
+    if DllCall("IsWindowVisible", "ptr", PreviewGui.Hwnd) {
+        PreviewGui.Show("NA")
+    }
 }
 
 ; 500ms 后恢复高亮
