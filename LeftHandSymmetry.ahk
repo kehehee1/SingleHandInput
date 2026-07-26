@@ -22,6 +22,7 @@ global KeyPreviewColors := Map()    ; 物理键 → 默认颜色
 global PreviewX := 0
 global PreviewY := 0
 global PreviewPosInitialized := false
+global PreviewVisible := false  ; 预览窗显隐状态，持久化到配置
 global KeyMapping := Map(
     ; 数字行
     "1", "0", "2", "9", "3", "8", "4", "7", "5", "6",
@@ -41,7 +42,7 @@ global KeyMapping := Map(
 global CONFIG_PATH := A_ScriptDir . "\LeftHandSymmetry.ini"
 
 LoadConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible
     if !FileExist(CONFIG_PATH)
         return
     DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
@@ -51,13 +52,15 @@ LoadConfig() {
     posInit := IniRead(CONFIG_PATH, "Settings", "PreviewPosInitialized", "0")
     if (posInit = "1" && PreviewX != "" && PreviewY != "")
         PreviewPosInitialized := true
+    PreviewVisible := (IniRead(CONFIG_PATH, "Settings", "PreviewVisible", "0") = "1")
 }
 
 SaveConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible
     IniWrite DOUBLE_CLICK_TIME, CONFIG_PATH, "Settings", "DoubleClickTime"
     IniWrite TRANSPARENCY, CONFIG_PATH, "Settings", "Transparency"
     IniWrite (PreviewPosInitialized ? "1" : "0"), CONFIG_PATH, "Settings", "PreviewPosInitialized"
+    IniWrite (PreviewVisible ? "1" : "0"), CONFIG_PATH, "Settings", "PreviewVisible"
     if (PreviewPosInitialized) {
         IniWrite PreviewX, CONFIG_PATH, "Settings", "PreviewX"
         IniWrite PreviewY, CONFIG_PATH, "Settings", "PreviewY"
@@ -67,6 +70,8 @@ SaveConfig() {
 ; ===== 初始化 =====
 LoadConfig()
 CreatePreviewWindow()
+; 初始托盘图标：灰色（模式关闭状态）
+TraySetIcon(A_AhkPath, 2)
 
 ; ===== 托盘菜单 =====
 try
@@ -89,20 +94,24 @@ TrayTip "左手单手输入工具已启动", "按 " SYMMETRY_HOTKEY " 切换单�
 ; ===== 热键：切换单手模式 =====
 Hotkey("!r", ToggleSymmetry)
 ToggleSymmetry(*) {
-    global SymmetryActive, lastKey, lastTime
+    global SymmetryActive, lastKey, lastTime, PreviewVisible
     SymmetryActive := !SymmetryActive
     ; 清空按键状态
     lastKey := ""
     lastTime := 0
     if (SymmetryActive) {
-        ShowPreview()
+        ; 启用模式：根据配置决定是否显示预览窗
+        if (PreviewVisible) {
+            ShowPreview()
+        }
         try
             A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
         catch
             {}
         TraySetIcon(A_AhkPath, 1)  ; 彩色图标：开启
     } else {
-        HidePreview()
+        ; 关闭模式：始终隐藏预览窗（不修改配置，只隐藏界面）
+        HidePreview(false)
         try
             A_TrayMenu.Rename("关闭单手模式", "切换单手模式")
         catch
@@ -252,7 +261,7 @@ CreatePreviewWindow() {
 }
 
 ShowPreview() {
-    global PreviewGui, PreviewX, PreviewY, PreviewPosInitialized
+    global PreviewGui, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible
     if (PreviewGui) {
         if !PreviewPosInitialized {
             ; 首次显示：右下角
@@ -262,6 +271,8 @@ ShowPreview() {
             PreviewPosInitialized := true
         }
         PreviewGui.Show("NA x" PreviewX " y" PreviewY)
+        PreviewVisible := true
+        SaveConfig()
         try
             A_TrayMenu.Rename("显示预览窗口", "隐藏预览窗口")
         catch
@@ -269,10 +280,14 @@ ShowPreview() {
     }
 }
 
-HidePreview(*) {
-    global PreviewGui
+HidePreview(saveToConfig := true) {
+    global PreviewGui, PreviewVisible
     if (PreviewGui) {
         PreviewGui.Hide()
+        if (saveToConfig) {
+            PreviewVisible := false
+            SaveConfig()
+        }
         try
             A_TrayMenu.Rename("隐藏预览窗口", "显示预览窗口")
         catch
@@ -323,7 +338,7 @@ ShowPreviewContextMenu(*) {
     previewMenu.Add("透明度 70%", SetTransparency70)
     previewMenu.Add("透明度 90%", SetTransparency90)
     previewMenu.Add()
-    previewMenu.Add("关闭预览", HidePreview)
+    previewMenu.Add("关闭预览", (*) => HidePreview())
     previewMenu.Show()
 }
 
