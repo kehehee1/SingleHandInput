@@ -137,6 +137,9 @@ A_TrayMenu.Add("打开配置", OpenConfig)
 A_TrayMenu.Add("重置默认映射", ResetKeyMapping)
 A_TrayMenu.Add("重新加载配置", ReloadConfig)
 A_TrayMenu.Add()
+A_TrayMenu.Add("打开脚本", OpenScript)
+A_TrayMenu.Add("重启", RestartScript)
+A_TrayMenu.Add()
 A_TrayMenu.Add("退出", QuitScript)
 A_TrayMenu.Default := "切换单手模式"
 
@@ -540,6 +543,16 @@ ReloadConfig(*) {
     }
     CreatePreviewWindow()
     TrayTip "已重新加载", "配置已从 INI 文件重新加载", 1
+}
+
+; ===== 打开脚本 =====
+OpenScript(*) {
+    Edit()
+}
+
+; ===== 重启脚本 =====
+RestartScript(*) {
+    Reload()
 }
 
 ; ===== 退出清理 =====
