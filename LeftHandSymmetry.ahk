@@ -144,7 +144,8 @@ A_TrayMenu.Add("退出", QuitScript)
 A_TrayMenu.Default := "切换单手模式"
 
 ; 初始托盘提示
-TrayTip "左手单手输入工具已启动", "按 " SYMMETRY_HOTKEY " 切换单手模式`n单击=原键 双击=对称键", 3
+TrayTip "左手单手输入工具已启动", "按 " SYMMETRY_HOTKEY " 切换单手模式`n单击=原键 双击=对称键", 1
+SetTimer(DismissTrayTip, -2000)
 
 ; ===== 热键：切换单手模式 =====
 Hotkey("!r", ToggleSymmetry)
@@ -164,6 +165,8 @@ ToggleSymmetry(*) {
         catch
             {}
         TraySetIcon(A_AhkPath, 1)  ; 彩色图标：开启
+        TrayTip "单手模式已激活", "单击=原键 双击=对称键", 1
+        SetTimer(DismissTrayTip, -2000)
     } else {
         ; 关闭模式：始终隐藏预览窗（不修改配置，只隐藏界面）
         HidePreview(false)
@@ -491,6 +494,7 @@ SetDoubleClickTime(*) {
         DOUBLE_CLICK_TIME := Integer(result.Value)
         SaveConfig()
         TrayTip "已更新", "双击时间 = " DOUBLE_CLICK_TIME "ms", 1
+        SetTimer(DismissTrayTip, -2000)
     }
 }
 
@@ -508,6 +512,7 @@ ResetKeyMapping(*) {
     SetDefaultKeyMapping()
     SaveConfig()
     TrayTip "已重置", "按键映射已恢复为默认配置", 1
+    SetTimer(DismissTrayTip, -2000)
 }
 
 ; ===== 重新加载配置 =====
@@ -515,6 +520,7 @@ ReloadConfig(*) {
     global KeyMapping, PreviewGui, KeyPreviewControls, KeyPreviewColors
     if !FileExist(CONFIG_PATH) {
         TrayTip "无配置", "未找到配置文件", 1
+        SetTimer(DismissTrayTip, -2000)
         return
     }
     ; 保存旧映射键列表，用于清理热键
@@ -543,6 +549,12 @@ ReloadConfig(*) {
     }
     CreatePreviewWindow()
     TrayTip "已重新加载", "配置已从 INI 文件重新加载", 1
+    SetTimer(DismissTrayTip, -2000)
+}
+
+; ===== 关闭托盘通知 =====
+DismissTrayTip(*) {
+    TrayTip()
 }
 
 ; ===== 打开脚本 =====
