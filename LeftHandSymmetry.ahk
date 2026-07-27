@@ -256,9 +256,9 @@ CreatePreviewWindow() {
         ["z", "x", "c", "v", "b", "n", "m"]
     ]
 
-    cellW := 44, cellH := 38  ; 键帽尺寸
-    gapH := 4, gapV := 4      ; 键间距
-    paddingX := 10, paddingY := 10
+    cellW := 56, cellH := 48  ; 键帽尺寸
+    gapH := 5, gapV := 5      ; 键间距
+    paddingX := 12, paddingY := 12
 
     ; 计算最大列数
     maxCols := 0
@@ -271,7 +271,7 @@ CreatePreviewWindow() {
     winW := paddingX * 2 + maxCols * (cellW + gapH) - gapH
     winH := paddingY * 2 + keyboardLayout.Length * (cellH + gapV) - gapV
 
-    PreviewGui.SetFont("s10 bold", "Consolas")
+    PreviewGui.SetFont("s12 bold", "Consolas")
 
     for rowIdx, rowKeys in keyboardLayout {
         row := rowIdx - 1
@@ -296,7 +296,7 @@ CreatePreviewWindow() {
                 ctrl := PreviewGui.Add("Text",
                     "x" x " y" y " w" cellW " h" cellH " +0x200 +Center cFFFFFF Background4A90D9", phyKey)
 
-                ; 映射键名小标签（在键帽底部，小号字体）
+                ; 映射键名小标签（在键帽底部）
                 displayMapped := mappedKey
                 if (mappedKey = "Backspace")
                     displayMapped := "BS"
@@ -309,11 +309,11 @@ CreatePreviewWindow() {
                 else if (mappedKey = "Escape" || mappedKey = "Esc")
                     displayMapped := "Esc"
 
-                subY := y + cellH - 14
-                PreviewGui.SetFont("s8", "Consolas")
+                subY := y + cellH - 16
+                PreviewGui.SetFont("s10", "Consolas")
                 PreviewGui.Add("Text",
-                    "x" x " y" subY " w" cellW " h" 14 " +0x200 +Center cB0D4FF Background4A90D9", displayMapped)
-                PreviewGui.SetFont("s10 bold", "Consolas")
+                    "x" x " y" subY " w" cellW " h" 16 " +0x200 +Center cB0D4FF Background4A90D9", displayMapped)
+                PreviewGui.SetFont("s12 bold", "Consolas")
             } else {
                 ; 无映射：灰色键帽 + 深色文字
                 ctrl := PreviewGui.Add("Text",
@@ -341,8 +341,8 @@ ShowPreview() {
         if !PreviewPosInitialized {
             ; 首次显示：右下角
             MonitorGetWorkArea(1, &workL, &workT, &workR, &workB)
-            PreviewX := workR - 360 - 20
-            PreviewY := workB - 200 - 20
+            PreviewX := workR - 460 - 20
+            PreviewY := workB - 250 - 20
             PreviewPosInitialized := true
         }
         PreviewGui.Show("NA x" PreviewX " y" PreviewY)
@@ -497,16 +497,16 @@ UpdatePreview(originalKey, mappedKey) {
     for phyKey, ctrl in KeyPreviewControls {
         hasMapping := KeyMapping.Has(phyKey)
         if (hasMapping) {
-            ctrl.SetFont("s10 bold cFFFFFF")
+            ctrl.SetFont("s12 bold cFFFFFF")
         } else {
-            ctrl.SetFont("s10 bold c666666")
+            ctrl.SetFont("s12 bold c666666")
         }
     }
 
     ; 高亮按下的物理键（亮黄色 + 放大）
     if (KeyPreviewControls.Has(originalKey)) {
         ctrl := KeyPreviewControls[originalKey]
-        ctrl.SetFont("s14 bold cFFFF00")
+        ctrl.SetFont("s16 bold cFFFF00")
         SetTimer(ResetHighlight.Bind(originalKey), -500)
     }
 
@@ -523,9 +523,9 @@ ResetHighlight(keyName) {
         ctrl := KeyPreviewControls[keyName]
         hasMapping := KeyMapping.Has(keyName)
         if (hasMapping) {
-            ctrl.SetFont("s10 bold cFFFFFF")
+            ctrl.SetFont("s12 bold cFFFFFF")
         } else {
-            ctrl.SetFont("s10 bold c666666")
+            ctrl.SetFont("s12 bold c666666")
         }
     }
 }
