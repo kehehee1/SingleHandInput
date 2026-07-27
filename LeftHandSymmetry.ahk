@@ -25,6 +25,7 @@ global PreviewPosInitialized := false
 global PreviewVisible := false  ; 预览窗显隐状态，持久化到配置
 global PreviewMode := "full"    ; 预览模式：full=全键盘, mapped=仅映射键
 global KeyMapping := Map()
+global lastHighlightedKey := ""  ; 上次高亮的键（用于去闪烁）
 
 ; ===== 默认映射（单向：左→右）=====
 SetDefaultKeyMapping() {
@@ -488,45 +489,43 @@ TogglePreview(*) {
 }
 
 UpdatePreview(originalKey, mappedKey) {
-    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping
+    global PreviewGui, KeyPreviewControls, KeyMapping, lastHighlightedKey
 
     if (!PreviewGui)
         return
 
-    ; 重置所有键帽字体为默认样式
-    for phyKey, ctrl in KeyPreviewControls {
-        hasMapping := KeyMapping.Has(phyKey)
-        if (hasMapping) {
+    ; 恢复上次高亮的键
+    if (lastHighlightedKey != "" && KeyPreviewControls.Has(lastHighlightedKey)) {
+        ctrl := KeyPreviewControls[lastHighlightedKey]
+        hasMapping := KeyMapping.Has(lastHighlightedKey)
+        if (hasMapping)
             ctrl.SetFont("s12 bold cFFFFFF")
-        } else {
+        else
             ctrl.SetFont("s12 bold c666666")
-        }
     }
 
-    ; 高亮按下的物理键（亮黄色 + 放大）
+    ; 高亮当前按下的键
     if (KeyPreviewControls.Has(originalKey)) {
         ctrl := KeyPreviewControls[originalKey]
         ctrl.SetFont("s16 bold cFFFF00")
-        SetTimer(ResetHighlight.Bind(originalKey), -500)
-    }
-
-    ; 只有窗口当前可见时才更新显示
-    if DllCall("IsWindowVisible", "ptr", PreviewGui.Hwnd) {
-        PreviewGui.Show("NA")
+        lastHighlightedKey := originalKey
+        SetTimer(ResetHighlight, -500)
+    } else {
+        lastHighlightedKey := ""
     }
 }
 
 ; 500ms 后恢复高亮
-ResetHighlight(keyName) {
-    global KeyPreviewControls, KeyMapping
-    if (KeyPreviewControls.Has(keyName)) {
-        ctrl := KeyPreviewControls[keyName]
-        hasMapping := KeyMapping.Has(keyName)
-        if (hasMapping) {
+ResetHighlight(*) {
+    global KeyPreviewControls, KeyMapping, lastHighlightedKey
+    if (lastHighlightedKey != "" && KeyPreviewControls.Has(lastHighlightedKey)) {
+        ctrl := KeyPreviewControls[lastHighlightedKey]
+        hasMapping := KeyMapping.Has(lastHighlightedKey)
+        if (hasMapping)
             ctrl.SetFont("s12 bold cFFFFFF")
-        } else {
+        else
             ctrl.SetFont("s12 bold c666666")
-        }
+        lastHighlightedKey := ""
     }
 }
 
