@@ -26,6 +26,10 @@ global PreviewVisible := false  ; 预览窗显隐状态，持久化到配置
 global PreviewMode := "full"    ; 预览模式：full=全键盘, mapped=仅映射键
 global KeyMapping := Map()
 global lastHighlightedKey := ""  ; 上次高亮的键（用于去闪烁）
+global KeyPreviewCtrlToKey := Map()  ; 控件 → 物理键（反向查找）
+global KeyPreviewHwndToKey := Map()  ; 控件Hwnd → 物理键
+global KeyPreviewSubControls := Map()  ; 物理键 → 映射键标签控件（用于悬浮放大）
+global lastHoveredKey := ""  ; 鼠标悬浮的键
 
 ; ===== 默认映射（单向：左→右）=====
 SetDefaultKeyMapping() {
@@ -241,7 +245,10 @@ KeyHandler(keyName, *) {
 
 ; ===== 预览窗口（虚拟键盘样式）=====
 CreatePreviewWindow() {
-    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping, PreviewMode
+    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping, PreviewMode, KeyPreviewCtrlToKey, lastHoveredKey, KeyPreviewSubControls
+
+    KeyPreviewCtrlToKey := Map()
+    lastHoveredKey := ""
 
     ; 指位颜色映射（已移除：改用统一的蓝色/灰色键帽）
 
@@ -257,7 +264,7 @@ CreatePreviewWindow() {
         ["z", "x", "c", "v", "b", "n", "m"]
     ]
 
-    cellW := 56, cellH := 48  ; 键帽尺寸
+    cellW := 56, cellH := 52  ; 键帽尺寸
     gapH := 5, gapV := 5      ; 键间距
     paddingX := 12, paddingY := 12
 
@@ -272,7 +279,7 @@ CreatePreviewWindow() {
     winW := paddingX * 2 + maxCols * (cellW + gapH) - gapH
     winH := paddingY * 2 + keyboardLayout.Length * (cellH + gapV) - gapV
 
-    PreviewGui.SetFont("s12 bold", "Consolas")
+    PreviewGui.SetFont("s14 bold", "Consolas")
 
     for rowIdx, rowKeys in keyboardLayout {
         row := rowIdx - 1
@@ -310,11 +317,14 @@ CreatePreviewWindow() {
                 else if (mappedKey = "Escape" || mappedKey = "Esc")
                     displayMapped := "Esc"
 
-                subY := y + cellH - 16
-                PreviewGui.SetFont("s10", "Consolas")
-                PreviewGui.Add("Text",
-                    "x" x " y" subY " w" cellW " h" 16 " +0x200 +Center cB0D4FF Background4A90D9", displayMapped)
-                PreviewGui.SetFont("s12 bold", "Consolas")
+                subY := y + cellH - 20
+                PreviewGui.SetFont("s12", "Consolas")
+                subCtrl := PreviewGui.Add("Text",
+                    "x" x " y" subY " w" cellW " h" 20 " +0x200 +Center cB0D4FF Background4A90D9", displayMapped)
+                PreviewGui.SetFont("s14 bold", "Consolas")
+                KeyPreviewCtrlToKey[subCtrl] := phyKey
+                KeyPreviewHwndToKey[subCtrl.Hwnd] := phyKey
+                KeyPreviewSubControls[phyKey] := subCtrl
             } else {
                 ; 无映射：灰色键帽 + 深色文字
                 ctrl := PreviewGui.Add("Text",
@@ -322,6 +332,8 @@ CreatePreviewWindow() {
             }
 
             KeyPreviewControls[phyKey] := ctrl
+            KeyPreviewCtrlToKey[ctrl] := phyKey
+            KeyPreviewHwndToKey[ctrl.Hwnd] := phyKey
             KeyPreviewColors[phyKey] := ""
         }
     }
@@ -330,6 +342,8 @@ CreatePreviewWindow() {
 
     ; 支持鼠标左键拖动窗口
     OnMessage(0x0201, OnPreviewLButtonDown)  ; WM_LBUTTONDOWN
+    ; 鼠标移动：悬浮高亮
+    OnMessage(0x0200, OnPreviewMouseMove)    ; WM_MOUSEMOVE
     ; 右键弹出菜单
     OnMessage(0x0205, OnPreviewRButtonUp)    ; WM_RBUTTONUP
     ; 拖动结束后保存位置
@@ -390,7 +404,7 @@ TogglePreviewMode(*) {
 
 ; ===== 重建预览窗口 =====
 RebuildPreview() {
-    global PreviewGui, KeyPreviewControls, KeyPreviewColors, PreviewVisible, PreviewX, PreviewY
+    global PreviewGui, KeyPreviewControls, KeyPreviewColors, PreviewVisible, PreviewX, PreviewY, KeyPreviewCtrlToKey, lastHoveredKey, KeyPreviewSubControls
     ; 保存当前窗口状态
     wasVisible := PreviewVisible
     oldX := PreviewX
@@ -443,6 +457,74 @@ OnPreviewMoveEnd(wParam, lParam, msg, hwnd) {
             PreviewPosInitialized := true
             SaveConfig()
         }
+    }
+}
+
+; 鼠标移动：悬浮高亮
+OnPreviewMouseMove(wParam, lParam, msg, hwnd) {
+    global PreviewGui, KeyPreviewControls, KeyPreviewSubControls, KeyPreviewHwndToKey, lastHoveredKey, KeyMapping
+
+    if (!PreviewGui)
+        return
+
+    ; 检查是否属于预览窗口
+    parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
+    if (parentHwnd != PreviewGui.Hwnd)
+        return
+
+    ; 获取光标在预览窗口客户区的位置
+    pt := Buffer(8)
+    DllCall("GetCursorPos", "ptr", pt)
+    DllCall("ScreenToClient", "ptr", PreviewGui.Hwnd, "ptr", pt)
+    clientX := NumGet(pt, 0, "int")
+    clientY := NumGet(pt, 4, "int")
+
+    ; 查找光标下的子控件（ChildWindowFromPoint 获取 hwnd）
+    ; 打包 POINT 结构：x(低32位) + y(高32位)
+    pt64 := (clientY << 32) | (clientX & 0xFFFFFFFF)
+    childHwnd := DllCall("ChildWindowFromPoint", "ptr", PreviewGui.Hwnd, "int64", pt64, "ptr")
+
+    if (!childHwnd || !KeyPreviewHwndToKey.Has(childHwnd)) {
+        ; 鼠标离开按键区域，恢复上一个悬浮键
+        if (lastHoveredKey != "")
+            RestoreKeyFont(lastHoveredKey)
+        lastHoveredKey := ""
+        return
+    }
+
+    ; 查找 hwnd 对应的物理键
+    keyName := KeyPreviewHwndToKey[childHwnd]
+    if (keyName = lastHoveredKey)
+        return
+
+    ; 恢复上一个悬浮键
+    if (lastHoveredKey != "")
+        RestoreKeyFont(lastHoveredKey)
+
+    ; 高亮当前悬浮键（整体放大）
+    ctrl := KeyPreviewControls[keyName]
+    ctrl.SetFont("s18 bold c00CC00")
+    if (KeyPreviewSubControls.Has(keyName)) {
+        subCtrl := KeyPreviewSubControls[keyName]
+        subCtrl.SetFont("s12 c00CC00")
+    }
+    lastHoveredKey := keyName
+}
+
+; 恢复按键字体到默认样式
+RestoreKeyFont(keyName) {
+    global KeyPreviewControls, KeyPreviewSubControls, KeyMapping
+    if (!KeyPreviewControls.Has(keyName))
+        return
+    ctrl := KeyPreviewControls[keyName]
+    hasMapping := KeyMapping.Has(keyName)
+    if (hasMapping)
+        ctrl.SetFont("s14 bold cFFFFFF")
+    else
+        ctrl.SetFont("s14 bold c666666")
+    if (KeyPreviewSubControls.Has(keyName)) {
+        subCtrl := KeyPreviewSubControls[keyName]
+        subCtrl.SetFont("s12 cB0D4FF")
     }
 }
 
@@ -499,15 +581,15 @@ UpdatePreview(originalKey, mappedKey) {
         ctrl := KeyPreviewControls[lastHighlightedKey]
         hasMapping := KeyMapping.Has(lastHighlightedKey)
         if (hasMapping)
-            ctrl.SetFont("s12 bold cFFFFFF")
+            ctrl.SetFont("s14 bold cFFFFFF")
         else
-            ctrl.SetFont("s12 bold c666666")
+            ctrl.SetFont("s14 bold c666666")
     }
 
     ; 高亮当前按下的键
     if (KeyPreviewControls.Has(originalKey)) {
         ctrl := KeyPreviewControls[originalKey]
-        ctrl.SetFont("s16 bold cFFFF00")
+        ctrl.SetFont("s18 bold cFFFF00")
         lastHighlightedKey := originalKey
         SetTimer(ResetHighlight, -500)
     } else {
@@ -522,9 +604,9 @@ ResetHighlight(*) {
         ctrl := KeyPreviewControls[lastHighlightedKey]
         hasMapping := KeyMapping.Has(lastHighlightedKey)
         if (hasMapping)
-            ctrl.SetFont("s12 bold cFFFFFF")
+            ctrl.SetFont("s14 bold cFFFFFF")
         else
-            ctrl.SetFont("s12 bold c666666")
+            ctrl.SetFont("s14 bold c666666")
         lastHighlightedKey := ""
     }
 }
