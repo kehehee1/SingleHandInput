@@ -127,7 +127,7 @@ TraySetIcon(A_AhkPath, 2)
 
 ; ===== 托盘菜单 =====
 ; 移除 AutoHotkey 自带的标准菜单
-for item in ["&Open", "&Help", "&Window Spy", "&Reload Script", "&Edit This Script", "&Pause Script", "&Suspend Hotkeys"] {
+for item in ["&Open", "&Help", "&Window Spy", "&Reload Script", "&Edit This Script", "&Pause Script", "&Suspend Hotkeys", "E&xit"] {
     try
         A_TrayMenu.Delete(item)
     catch
