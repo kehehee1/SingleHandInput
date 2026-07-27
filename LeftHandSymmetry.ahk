@@ -23,6 +23,7 @@ global PreviewX := 0
 global PreviewY := 0
 global PreviewPosInitialized := false
 global PreviewVisible := false  ; 预览窗显隐状态，持久化到配置
+global PreviewMode := "full"    ; 预览模式：full=全键盘, mapped=仅映射键
 global KeyMapping := Map()
 
 ; ===== 默认映射（单向：左→右）=====
@@ -81,10 +82,15 @@ LoadConfig() {
             }
         }
     }
+    ; 加载预览模式
+    try
+        PreviewMode := IniRead(CONFIG_PATH, "Settings", "PreviewMode", "full")
+    catch
+        PreviewMode := "full"
 }
 
 SaveConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, KeyMapping
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, KeyMapping
 
     file := FileOpen(CONFIG_PATH, "w", "UTF-8")
     if !file
@@ -95,6 +101,7 @@ SaveConfig() {
     file.WriteLine("Transparency=" . TRANSPARENCY)
     file.WriteLine("PreviewPosInitialized=" . (PreviewPosInitialized ? "1" : "0"))
     file.WriteLine("PreviewVisible=" . (PreviewVisible ? "1" : "0"))
+    file.WriteLine("PreviewMode=" . PreviewMode)
     if (PreviewPosInitialized) {
         file.WriteLine("PreviewX=" . PreviewX)
         file.WriteLine("PreviewY=" . PreviewY)
@@ -131,6 +138,7 @@ A_TrayMenu.Delete()
 A_TrayMenu.Add()
 A_TrayMenu.Add("切换单手模式", ToggleSymmetry)
 A_TrayMenu.Add("显示预览窗口", TogglePreview)
+A_TrayMenu.Add("切换预览模式", TogglePreviewMode)
 A_TrayMenu.Add("设置双击时间...", SetDoubleClickTime)
 A_TrayMenu.Add()
 A_TrayMenu.Add("打开配置", OpenConfig)
@@ -230,95 +238,90 @@ KeyHandler(keyName, *) {
     lastTime := currentTime
 }
 
-; ===== 预览窗口 =====
+; ===== 预览窗口（虚拟键盘样式）=====
 CreatePreviewWindow() {
-    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping
+    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping, PreviewMode
 
-    ; 指位颜色映射（彩虹色：5→红, 4→橙, 3→绿, 2→蓝）
-    fingerColors := Map(5, "cE04040", 4, "cE08020", 3, "c109010", 2, "c1040C0")
+    ; 指位颜色映射（已移除：改用统一的蓝色/灰色键帽）
 
     PreviewGui := Gui("+AlwaysOnTop +ToolWindow -Caption +Border +Owner", "KeyPreview")
     PreviewGui.BackColor := "F0F0F0"
     WinSetTransparent(TRANSPARENCY, PreviewGui.Hwnd)
 
-    ; 物理键布局（4行5列，对应预览位置）
-    physicalKeys := [
-        ["1", "2", "3", "4", "5"],  ; 数字行物理键
-        ["q", "w", "e", "r", "t"],
-        ["a", "s", "d", "f", "g"],
-        ["z", "x", "c", "v", "b"]
+    ; 键盘布局（左手区域，按行排列，每行居中）
+    keyboardLayout := [
+        ["``", "1", "2", "3", "4", "5"],
+        ["q", "w", "e", "r", "t", "y"],
+        ["a", "s", "d", "f", "g", "h"],
+        ["z", "x", "c", "v", "b", "n", "m"]
     ]
-    ; 根据 KeyMapping 动态生成预览显示
-    previewKeys := []
-    for rowIdx, row in physicalKeys {
-        previewRow := []
-        for colIdx, phyKey in row {
-            if KeyMapping.Has(phyKey) {
-                mappedKey := KeyMapping[phyKey]
-                ; 长键名缩短显示
+
+    cellW := 44, cellH := 38  ; 键帽尺寸
+    gapH := 4, gapV := 4      ; 键间距
+    paddingX := 10, paddingY := 10
+
+    ; 计算最大列数
+    maxCols := 0
+    for rowKeys in keyboardLayout {
+        if (rowKeys.Length > maxCols)
+            maxCols := rowKeys.Length
+    }
+
+    ; 窗口宽度
+    winW := paddingX * 2 + maxCols * (cellW + gapH) - gapH
+    winH := paddingY * 2 + keyboardLayout.Length * (cellH + gapV) - gapV
+
+    PreviewGui.SetFont("s10 bold", "Consolas")
+
+    for rowIdx, rowKeys in keyboardLayout {
+        row := rowIdx - 1
+        y := paddingY + row * (cellH + gapV)
+
+        ; 该行居中
+        rowWidth := rowKeys.Length * (cellW + gapH) - gapH
+        startX := paddingX + (winW - paddingX * 2 - rowWidth) // 2
+
+        for colIdx, phyKey in rowKeys {
+            x := startX + (colIdx - 1) * (cellW + gapH)
+
+            hasMapping := KeyMapping.Has(phyKey)
+            mappedKey := hasMapping ? KeyMapping[phyKey] : ""
+
+            ; 仅映射模式：跳过无映射的键
+            if (PreviewMode = "mapped" && !hasMapping)
+                continue
+
+            if (hasMapping) {
+                ; 有映射：蓝色键帽 + 白色文字，显示原键
+                ctrl := PreviewGui.Add("Text",
+                    "x" x " y" y " w" cellW " h" cellH " +0x200 +Center cFFFFFF Background4A90D9", phyKey)
+
+                ; 映射键名小标签（在键帽底部，小号字体）
+                displayMapped := mappedKey
                 if (mappedKey = "Backspace")
-                    mappedKey := "BS"
-                if (mappedKey = "Enter")
-                    mappedKey := "Ent"
-                if (mappedKey = "Delete")
-                    mappedKey := "Del"
-                previewRow.Push(mappedKey)
-            } else {
-                previewRow.Push("")  ; 无映射
-            }
-        }
-        previewKeys.Push(previewRow)
-    }
-    ; 指位（每行每列对应的指位序号）
-    fingerPositions := [
-        [5, 4, 3, 2, 2],  ; 数字行
-        [5, 4, 3, 2, 2],  ; 上排
-        [5, 4, 3, 2, 2],  ; 中排
-        [5, 3, 2, 2, 2]   ; 下排
-    ]
-    ; 上排/中排指位序号（小拇指→食指 5→2）
-    fingerNums := [5, 4, 3, 2, 2]
-    ; 下排指位（z对应5, x对应3, cvb对应2）
-    bottomFingerNums := [5, 3, 2, 2, 2]
+                    displayMapped := "BS"
+                else if (mappedKey = "Enter")
+                    displayMapped := "Ent"
+                else if (mappedKey = "Delete")
+                    displayMapped := "Del"
+                else if (mappedKey = "Space")
+                    displayMapped := "Spc"
+                else if (mappedKey = "Escape" || mappedKey = "Esc")
+                    displayMapped := "Esc"
 
-    cellW := 35, cellH := 28, startX := 10, startY := 8
-
-    ; 第一行：指位序号（上排/中排共用）
-    PreviewGui.SetFont("s8", "Consolas")
-    Loop 5 {
-        col := A_Index - 1
-        x := startX + col * cellW
-        f := fingerNums[col + 1]
-        color := fingerColors[f]
-        PreviewGui.Add("Text", "x" x " y" startY " w" cellW " h16 Center c" color, f)
-    }
-
-    ; 按键行
-    PreviewGui.SetFont("s14 bold", "Consolas")
-    Loop 4 {
-        row := A_Index - 1
-        Loop 5 {
-            col := A_Index - 1
-            x := startX + col * cellW
-            ; 下排按键前插入指位行
-            if (row = 3) {
-                ; 下排指位提示
+                subY := y + cellH - 14
                 PreviewGui.SetFont("s8", "Consolas")
-                fx := startX + col * cellW
-                fy := startY + 18 + 3 * cellH
-                f := bottomFingerNums[col + 1]
-                color := fingerColors[f]
-                PreviewGui.Add("Text", "x" fx " y" fy " w" cellW " h14 Center c" color, f)
-                PreviewGui.SetFont("s14 bold", "Consolas")
+                PreviewGui.Add("Text",
+                    "x" x " y" subY " w" cellW " h" 14 " +0x200 +Center cB0D4FF Background4A90D9", displayMapped)
+                PreviewGui.SetFont("s10 bold", "Consolas")
+            } else {
+                ; 无映射：灰色键帽 + 深色文字
+                ctrl := PreviewGui.Add("Text",
+                    "x" x " y" y " w" cellW " h" cellH " +0x200 +Center c666666 BackgroundE8E8E8", phyKey)
             }
-            y := startY + 18 + row * cellH + (row >= 3 ? 16 : 0)
-            key := previewKeys[row + 1][col + 1]
-            phyKey := physicalKeys[row + 1][col + 1]
-            f := fingerPositions[row + 1][col + 1]
-            color := fingerColors[f]
-            ctrl := PreviewGui.Add("Text", "x" x " y" y " w" cellW " h" cellH " Center c" color, key)
+
             KeyPreviewControls[phyKey] := ctrl
-            KeyPreviewColors[phyKey] := color
+            KeyPreviewColors[phyKey] := ""
         }
     }
 
@@ -338,8 +341,8 @@ ShowPreview() {
         if !PreviewPosInitialized {
             ; 首次显示：右下角
             MonitorGetWorkArea(1, &workL, &workT, &workR, &workB)
-            PreviewX := workR - 200 - 20
-            PreviewY := workB - 140 - 20
+            PreviewX := workR - 360 - 20
+            PreviewY := workB - 200 - 20
             PreviewPosInitialized := true
         }
         PreviewGui.Show("NA x" PreviewX " y" PreviewY)
@@ -364,6 +367,45 @@ HidePreview(saveToConfig := true) {
             A_TrayMenu.Rename("隐藏预览窗口", "显示预览窗口")
         catch
             {}
+    }
+}
+
+; ===== 切换预览模式 =====
+TogglePreviewMode(*) {
+    global PreviewMode, PreviewGui, PreviewVisible
+    ; 切换模式
+    if (PreviewMode = "full")
+        PreviewMode := "mapped"
+    else
+        PreviewMode := "full"
+    SaveConfig()
+    ; 重建预览窗口
+    RebuildPreview()
+    ; 更新菜单文本
+    modeText := (PreviewMode = "full") ? "全键盘" : "仅映射键"
+    TrayTip "预览模式", "已切换为" modeText, 1
+    SetTimer(DismissTrayTip, -2000)
+}
+
+; ===== 重建预览窗口 =====
+RebuildPreview() {
+    global PreviewGui, KeyPreviewControls, KeyPreviewColors, PreviewVisible, PreviewX, PreviewY
+    ; 保存当前窗口状态
+    wasVisible := PreviewVisible
+    oldX := PreviewX
+    oldY := PreviewY
+    ; 销毁旧窗口
+    if (PreviewGui) {
+        PreviewGui.Destroy()
+        PreviewGui := 0
+        KeyPreviewControls := Map()
+        KeyPreviewColors := Map()
+    }
+    ; 重建
+    CreatePreviewWindow()
+    ; 恢复窗口位置
+    if (wasVisible && PreviewGui) {
+        PreviewGui.Show("NA x" oldX " y" oldY)
     }
 }
 
@@ -446,25 +488,29 @@ TogglePreview(*) {
 }
 
 UpdatePreview(originalKey, mappedKey) {
-    global PreviewGui, KeyPreviewControls, KeyPreviewColors
+    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping
 
     if (!PreviewGui)
         return
 
-    ; 重置所有控件颜色为各自的指位颜色，恢复标准字体
+    ; 重置所有键帽字体为默认样式
     for phyKey, ctrl in KeyPreviewControls {
-        color := KeyPreviewColors.Has(phyKey) ? KeyPreviewColors[phyKey] : "c0078D7"
-        ctrl.SetFont("s14 bold c" color)
+        hasMapping := KeyMapping.Has(phyKey)
+        if (hasMapping) {
+            ctrl.SetFont("s10 bold cFFFFFF")
+        } else {
+            ctrl.SetFont("s10 bold c666666")
+        }
     }
 
-    ; 高亮按下的物理键对应的预览控件（亮紫色+放大字体，明显区别于彩虹色）
+    ; 高亮按下的物理键（亮黄色 + 放大）
     if (KeyPreviewControls.Has(originalKey)) {
         ctrl := KeyPreviewControls[originalKey]
-        ctrl.SetFont("s16 bold cFF00FF")
+        ctrl.SetFont("s14 bold cFFFF00")
         SetTimer(ResetHighlight.Bind(originalKey), -500)
     }
 
-    ; 只有窗口当前可见时才更新显示（避免右键关闭后被按键重新激活）
+    ; 只有窗口当前可见时才更新显示
     if DllCall("IsWindowVisible", "ptr", PreviewGui.Hwnd) {
         PreviewGui.Show("NA")
     }
@@ -472,11 +518,15 @@ UpdatePreview(originalKey, mappedKey) {
 
 ; 500ms 后恢复高亮
 ResetHighlight(keyName) {
-    global KeyPreviewControls, KeyPreviewColors
+    global KeyPreviewControls, KeyMapping
     if (KeyPreviewControls.Has(keyName)) {
         ctrl := KeyPreviewControls[keyName]
-        color := KeyPreviewColors.Has(keyName) ? KeyPreviewColors[keyName] : "c0078D7"
-        ctrl.SetFont("s14 bold c" color)
+        hasMapping := KeyMapping.Has(keyName)
+        if (hasMapping) {
+            ctrl.SetFont("s10 bold cFFFFFF")
+        } else {
+            ctrl.SetFont("s10 bold c666666")
+        }
     }
 }
 
@@ -541,13 +591,7 @@ ReloadConfig(*) {
         Hotkey("~$*" originalKey, fn)
     }
     ; 重建预览窗口
-    if (PreviewGui) {
-        PreviewGui.Destroy()
-        PreviewGui := 0
-        KeyPreviewControls := Map()
-        KeyPreviewColors := Map()
-    }
-    CreatePreviewWindow()
+    RebuildPreview()
     TrayTip "已重新加载", "配置已从 INI 文件重新加载", 1
     SetTimer(DismissTrayTip, -2000)
 }
