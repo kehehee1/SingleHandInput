@@ -126,13 +126,8 @@ CreatePreviewWindow()
 TraySetIcon(A_AhkPath, 2)
 
 ; ===== 托盘菜单 =====
-; 移除 AutoHotkey 自带的标准菜单
-for item in ["&Open", "&Help", "&Window Spy", "&Reload Script", "&Edit This Script", "&Pause Script", "&Suspend Hotkeys", "E&xit"] {
-    try
-        A_TrayMenu.Delete(item)
-    catch
-        {}
-}
+; 先清空所有菜单项，再添加自定义菜单
+A_TrayMenu.Delete()
 A_TrayMenu.Add()
 A_TrayMenu.Add("切换单手模式", ToggleSymmetry)
 A_TrayMenu.Add("显示预览窗口", TogglePreview)
