@@ -139,6 +139,7 @@ A_TrayMenu.Add("设置双击时间...", SetDoubleClickTime)
 A_TrayMenu.Add()
 A_TrayMenu.Add("打开配置", OpenConfig)
 A_TrayMenu.Add("重置默认映射", ResetKeyMapping)
+A_TrayMenu.Add("重新加载配置", ReloadConfig)
 A_TrayMenu.Add()
 A_TrayMenu.Add("退出", QuitScript)
 A_TrayMenu.Default := "切换单手模式"
@@ -502,9 +503,47 @@ OpenConfig(*) {
 ; ===== 重置为默认映射 =====
 ResetKeyMapping(*) {
     global KeyMapping
+    result := MsgBox("确定要重置按键映射为默认配置吗？`n自定义的映射将被覆盖。", "重置确认", 0x24)
+    if (result != "Yes")
+        return
     SetDefaultKeyMapping()
     SaveConfig()
     TrayTip "已重置", "按键映射已恢复为默认配置", 1
+}
+
+; ===== 重新加载配置 =====
+ReloadConfig(*) {
+    global KeyMapping, PreviewGui, KeyPreviewControls, KeyPreviewColors
+    if !FileExist(CONFIG_PATH) {
+        TrayTip "无配置", "未找到配置文件", 1
+        return
+    }
+    ; 保存旧映射键列表，用于清理热键
+    oldKeys := []
+    for k, v in KeyMapping
+        oldKeys.Push(k)
+    ; 重新加载配置
+    KeyMapping := Map()
+    LoadConfig()
+    ; 关闭旧映射中已移除键的热键
+    for idx, k in oldKeys {
+        if !KeyMapping.Has(k)
+            Hotkey("~$*" k, "Off")
+    }
+    ; 注册新映射的热键
+    for originalKey, mappedKey in KeyMapping {
+        fn := KeyHandler.Bind(originalKey)
+        Hotkey("~$*" originalKey, fn)
+    }
+    ; 重建预览窗口
+    if (PreviewGui) {
+        PreviewGui.Destroy()
+        PreviewGui := 0
+        KeyPreviewControls := Map()
+        KeyPreviewColors := Map()
+    }
+    CreatePreviewWindow()
+    TrayTip "已重新加载", "配置已从 INI 文件重新加载", 1
 }
 
 ; ===== 退出清理 =====
