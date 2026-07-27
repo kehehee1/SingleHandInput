@@ -23,52 +23,104 @@ global PreviewX := 0
 global PreviewY := 0
 global PreviewPosInitialized := false
 global PreviewVisible := false  ; 预览窗显隐状态，持久化到配置
-global KeyMapping := Map(
-    ; 数字行
-    "1", "0", "2", "9", "3", "8", "4", "7", "5", "6",
-    "6", "5", "7", "4", "8", "3", "9", "2", "0", "1",
-    ; 上排
-    "q", "p", "w", "o", "e", "i", "r", "u", "t", "y",
-    "y", "t", "u", "r", "i", "e", "o", "w", "p", "q",
-    ; 中排
-    "a", "Backspace", "s", "l", "d", "k", "f", "j", "g", "h",
-    "h", "g", "j", "f", "k", "d", "l", "s", "'", "a",
-    ; 下排（B 不映射，V↔N  C↔M  X→Del  Z→Enter）
-    "z", "Enter", "x", "Delete", "c", "m", "v", "n",
-    "n", "v", "m", "c", "Delete", "x", "Enter", "z"
-)
+global KeyMapping := Map()
+
+; ===== 默认映射（单向：左→右）=====
+SetDefaultKeyMapping() {
+    global KeyMapping
+    KeyMapping := Map(
+        ; 数字行（左→右）
+        "1", "0", "2", "9", "3", "8", "4", "7", "5", "6",
+        ; 上排（左→右）
+        "q", "p", "w", "o", "e", "i", "r", "u", "t", "y",
+        ; 中排（左→右）
+        "a", "Backspace", "s", "l", "d", "k", "f", "j", "g", "h",
+        ; 下排（B 不映射，X→Del  Z→Enter  C→M  V→N）
+        "z", "Enter", "x", "Delete", "c", "m", "v", "n"
+    )
+}
 
 ; ===== 配置文件持久化 =====
 global CONFIG_PATH := A_ScriptDir . "\LeftHandSymmetry.ini"
 
 LoadConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, KeyMapping
     if !FileExist(CONFIG_PATH)
         return
     DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
     TRANSPARENCY := Integer(IniRead(CONFIG_PATH, "Settings", "Transparency", TRANSPARENCY))
-    PreviewX := Integer(IniRead(CONFIG_PATH, "Settings", "PreviewX", ""))
-    PreviewY := Integer(IniRead(CONFIG_PATH, "Settings", "PreviewY", ""))
+    try
+        PreviewX := Integer(IniRead(CONFIG_PATH, "Settings", "PreviewX", ""))
+    catch
+        PreviewX := 0
+    try
+        PreviewY := Integer(IniRead(CONFIG_PATH, "Settings", "PreviewY", ""))
+    catch
+        PreviewY := 0
     posInit := IniRead(CONFIG_PATH, "Settings", "PreviewPosInitialized", "0")
     if (posInit = "1" && PreviewX != "" && PreviewY != "")
         PreviewPosInitialized := true
     PreviewVisible := (IniRead(CONFIG_PATH, "Settings", "PreviewVisible", "0") = "1")
+
+    ; 加载自定义按键映射
+    try
+        mappingStr := IniRead(CONFIG_PATH, "KeyMapping")
+    catch
+        mappingStr := ""
+    if (mappingStr != "") {
+        KeyMapping := Map()
+        Loop Parse, mappingStr, "`n"
+        {
+            if A_LoopField = ""
+                continue
+            eqPos := InStr(A_LoopField, "=")
+            if (eqPos > 0) {
+                srcKey := SubStr(A_LoopField, 1, eqPos - 1)
+                tgtKey := SubStr(A_LoopField, eqPos + 1)
+                KeyMapping[srcKey] := tgtKey
+            }
+        }
+    }
 }
 
 SaveConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible
-    IniWrite DOUBLE_CLICK_TIME, CONFIG_PATH, "Settings", "DoubleClickTime"
-    IniWrite TRANSPARENCY, CONFIG_PATH, "Settings", "Transparency"
-    IniWrite (PreviewPosInitialized ? "1" : "0"), CONFIG_PATH, "Settings", "PreviewPosInitialized"
-    IniWrite (PreviewVisible ? "1" : "0"), CONFIG_PATH, "Settings", "PreviewVisible"
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, KeyMapping
+
+    file := FileOpen(CONFIG_PATH, "w", "UTF-8")
+    if !file
+        return
+
+    file.WriteLine("[Settings]")
+    file.WriteLine("DoubleClickTime=" . DOUBLE_CLICK_TIME)
+    file.WriteLine("Transparency=" . TRANSPARENCY)
+    file.WriteLine("PreviewPosInitialized=" . (PreviewPosInitialized ? "1" : "0"))
+    file.WriteLine("PreviewVisible=" . (PreviewVisible ? "1" : "0"))
     if (PreviewPosInitialized) {
-        IniWrite PreviewX, CONFIG_PATH, "Settings", "PreviewX"
-        IniWrite PreviewY, CONFIG_PATH, "Settings", "PreviewY"
+        file.WriteLine("PreviewX=" . PreviewX)
+        file.WriteLine("PreviewY=" . PreviewY)
     }
+    file.WriteLine("")
+
+    file.WriteLine("[KeyMapping]")
+    file.WriteLine("; 左手单手输入工具 - 按键映射配置")
+    file.WriteLine("; 格式：原始键=目标键（双击原始键时发送目标键）")
+    file.WriteLine("; 例如：a=l 表示双击 a 发送 l（单次 a 仍透传原键）")
+    file.WriteLine("; 目标键可用键名：Backspace, Enter, Delete, Tab, Esc, Space 等")
+    file.WriteLine("")
+    for srcKey, tgtKey in KeyMapping {
+        file.WriteLine(srcKey . "=" . tgtKey)
+    }
+
+    file.Close()
 }
 
 ; ===== 初始化 =====
 LoadConfig()
+; 如果 INI 没有 [KeyMapping] 节，使用默认映射并立即写入
+if (KeyMapping.Count = 0) {
+    SetDefaultKeyMapping()
+    SaveConfig()
+}
 CreatePreviewWindow()
 ; 初始托盘图标：灰色（模式关闭状态）
 TraySetIcon(A_AhkPath, 2)
@@ -174,7 +226,7 @@ KeyHandler(keyName, *) {
 
 ; ===== 预览窗口 =====
 CreatePreviewWindow() {
-    global PreviewGui, KeyPreviewControls, KeyPreviewColors
+    global PreviewGui, KeyPreviewControls, KeyPreviewColors, KeyMapping
 
     ; 指位颜色映射（彩虹色：5→红, 4→橙, 3→绿, 2→蓝）
     fingerColors := Map(5, "cE04040", 4, "cE08020", 3, "c109010", 2, "c1040C0")
@@ -183,20 +235,34 @@ CreatePreviewWindow() {
     PreviewGui.BackColor := "F0F0F0"
     WinSetTransparent(TRANSPARENCY, PreviewGui.Hwnd)
 
-    ; 预览键位（4行5列，显示映射目标键）
-    previewKeys := [
-        ["0", "9", "8", "7", "6"],  ; 数字行映射
-        ["p", "o", "i", "u", "y"],
-        ["BS", "l", "k", "j", "h"],
-        ["Ent", "Del", "m", "n", "b"]
-    ]
-    ; 物理键（对应预览位置）
+    ; 物理键布局（4行5列，对应预览位置）
     physicalKeys := [
         ["1", "2", "3", "4", "5"],  ; 数字行物理键
         ["q", "w", "e", "r", "t"],
         ["a", "s", "d", "f", "g"],
         ["z", "x", "c", "v", "b"]
     ]
+    ; 根据 KeyMapping 动态生成预览显示
+    previewKeys := []
+    for rowIdx, row in physicalKeys {
+        previewRow := []
+        for colIdx, phyKey in row {
+            if KeyMapping.Has(phyKey) {
+                mappedKey := KeyMapping[phyKey]
+                ; 长键名缩短显示
+                if (mappedKey = "Backspace")
+                    mappedKey := "BS"
+                if (mappedKey = "Enter")
+                    mappedKey := "Ent"
+                if (mappedKey = "Delete")
+                    mappedKey := "Del"
+                previewRow.Push(mappedKey)
+            } else {
+                previewRow.Push("")  ; 无映射
+            }
+        }
+        previewKeys.Push(previewRow)
+    }
     ; 指位（每行每列对应的指位序号）
     fingerPositions := [
         [5, 4, 3, 2, 2],  ; 数字行
