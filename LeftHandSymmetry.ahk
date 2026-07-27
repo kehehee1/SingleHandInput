@@ -137,6 +137,9 @@ A_TrayMenu.Add("切换单手模式", ToggleSymmetry)
 A_TrayMenu.Add("显示预览窗口", TogglePreview)
 A_TrayMenu.Add("设置双击时间...", SetDoubleClickTime)
 A_TrayMenu.Add()
+A_TrayMenu.Add("打开配置", OpenConfig)
+A_TrayMenu.Add("重置默认映射", ResetKeyMapping)
+A_TrayMenu.Add()
 A_TrayMenu.Add("退出", QuitScript)
 A_TrayMenu.Default := "切换单手模式"
 
@@ -489,6 +492,19 @@ SetDoubleClickTime(*) {
         SaveConfig()
         TrayTip "已更新", "双击时间 = " DOUBLE_CLICK_TIME "ms", 1
     }
+}
+
+; ===== 打开配置文件 =====
+OpenConfig(*) {
+    Run(CONFIG_PATH)
+}
+
+; ===== 重置为默认映射 =====
+ResetKeyMapping(*) {
+    global KeyMapping
+    SetDefaultKeyMapping()
+    SaveConfig()
+    TrayTip "已重置", "按键映射已恢复为默认配置", 1
 }
 
 ; ===== 退出清理 =====
