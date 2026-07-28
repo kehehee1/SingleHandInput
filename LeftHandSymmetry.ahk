@@ -190,8 +190,9 @@ ToggleSymmetry(*) {
     lastKey := ""
     lastTime := 0
     if (SymmetryActive) {
-        ; 启用模式：始终显示预览窗
-        ShowPreview()
+        ; 启用模式：按配置决定是否显示预览窗
+        if (PreviewVisible)
+            ShowPreview()
         try
             A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
         catch
@@ -200,8 +201,8 @@ ToggleSymmetry(*) {
         TrayTip "单手模式已激活", "单击=原键 双击=对称键", 1
         SetTimer(DismissTrayTip, -2000)
     } else {
-        ; 关闭模式：隐藏预览窗
-        HidePreview(true)
+        ; 关闭模式：隐藏预览窗，但不修改 PreviewVisible 配置
+        HidePreview(false)
         try
             A_TrayMenu.Rename("关闭单手模式", "切换单手模式")
         catch
