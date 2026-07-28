@@ -518,10 +518,14 @@ RebuildPreview() {
     oldY := PreviewY
     ; 销毁旧窗口
     if (PreviewGui) {
-        PreviewGui.Destroy()
-        PreviewGui := 0
+        lastHoveredKey := ""
         KeyPreviewControls := Map()
         KeyPreviewColors := Map()
+        KeyPreviewSubControls := Map()
+        KeyPreviewCtrlToKey := Map()
+        KeyPreviewHwndToKey := Map()
+        PreviewGui.Destroy()
+        PreviewGui := 0
     }
     ; 重建
     CreatePreviewWindow()
