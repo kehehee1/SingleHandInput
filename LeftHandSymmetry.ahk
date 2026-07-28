@@ -50,7 +50,7 @@ SetDefaultKeyMapping() {
 global CONFIG_PATH := A_ScriptDir . "\LeftHandSymmetry.ini"
 
 LoadConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, KeyMapping
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, SymmetryActive, KeyMapping
     if !FileExist(CONFIG_PATH)
         return
     DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
@@ -92,18 +92,24 @@ LoadConfig() {
         PreviewMode := IniRead(CONFIG_PATH, "Settings", "PreviewMode", "full")
     catch
         PreviewMode := "full"
+    ; 加载单手模式状态
+    try
+        SymmetryActive := (IniRead(CONFIG_PATH, "Settings", "SymmetryActive", "0") = "1")
+    catch
+        SymmetryActive := false
 }
 
 SaveConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, KeyMapping
-
-    file := FileOpen(CONFIG_PATH, "w", "UTF-8")
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, SymmetryActive, KeyMapping
+    ; 注意：必须用 ANSI 编码，否则 IniRead 无法读取（GetPrivateProfileString 不支持 UTF-8）
+    file := FileOpen(CONFIG_PATH, "w")
     if !file
         return
 
     file.WriteLine("[Settings]")
     file.WriteLine("DoubleClickTime=" . DOUBLE_CLICK_TIME)
     file.WriteLine("Transparency=" . TRANSPARENCY)
+    file.WriteLine("SymmetryActive=" . (SymmetryActive ? "1" : "0"))
     file.WriteLine("PreviewPosInitialized=" . (PreviewPosInitialized ? "1" : "0"))
     file.WriteLine("PreviewVisible=" . (PreviewVisible ? "1" : "0"))
     file.WriteLine("PreviewMode=" . PreviewMode)
@@ -114,10 +120,10 @@ SaveConfig() {
     file.WriteLine("")
 
     file.WriteLine("[KeyMapping]")
-    file.WriteLine("; 左手单手输入工具 - 按键映射配置")
-    file.WriteLine("; 格式：原始键=目标键（双击原始键时发送目标键）")
-    file.WriteLine("; 例如：a=l 表示双击 a 发送 l（单次 a 仍透传原键）")
-    file.WriteLine("; 目标键可用键名：Backspace, Enter, Delete, Tab, Esc, Space 等")
+    file.WriteLine("; LeftHandSymmetry - Key Mapping Config")
+    file.WriteLine("; Format: srcKey=targetKey (double-click src to send target)")
+    file.WriteLine("; e.g. a=l means double-click a sends l (single a still passes through)")
+    file.WriteLine("; Target keys: Backspace, Enter, Delete, Tab, Esc, Space, etc.")
     file.WriteLine("")
     for srcKey, tgtKey in KeyMapping {
         file.WriteLine(srcKey . "=" . tgtKey)
@@ -134,8 +140,16 @@ if (KeyMapping.Count = 0) {
     SaveConfig()
 }
 CreatePreviewWindow()
-; 初始托盘图标：灰色（模式关闭状态）
-TraySetIcon(A_AhkPath, 2)
+; 根据配置恢复单手模式状态
+if (SymmetryActive) {
+    TraySetIcon(A_AhkPath, 1)  ; 彩色图标：开启
+    if (PreviewVisible)
+        ShowPreview()
+} else {
+    TraySetIcon(A_AhkPath, 2)  ; 灰色图标：关闭
+    if (PreviewVisible)
+        ShowPreview()
+}
 
 ; ===== 托盘菜单 =====
 ; 先清空所有菜单项，再添加自定义菜单
@@ -155,6 +169,13 @@ A_TrayMenu.Add("重启", RestartScript)
 A_TrayMenu.Add()
 A_TrayMenu.Add("退出", QuitScript)
 A_TrayMenu.Default := "切换单手模式"
+; 如果启动时已激活单手模式，更新菜单文字
+if (SymmetryActive) {
+    try
+        A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
+    catch
+        {}
+}
 
 ; 初始托盘提示
 TrayTip "左手单手输入工具已启动", "按 " SYMMETRY_HOTKEY " 切换单手模式`n单击=原键 双击=对称键", 1
@@ -169,10 +190,8 @@ ToggleSymmetry(*) {
     lastKey := ""
     lastTime := 0
     if (SymmetryActive) {
-        ; 启用模式：根据配置决定是否显示预览窗
-        if (PreviewVisible) {
-            ShowPreview()
-        }
+        ; 启用模式：始终显示预览窗
+        ShowPreview()
         try
             A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
         catch
@@ -181,14 +200,15 @@ ToggleSymmetry(*) {
         TrayTip "单手模式已激活", "单击=原键 双击=对称键", 1
         SetTimer(DismissTrayTip, -2000)
     } else {
-        ; 关闭模式：始终隐藏预览窗（不修改配置，只隐藏界面）
-        HidePreview(false)
+        ; 关闭模式：隐藏预览窗
+        HidePreview(true)
         try
             A_TrayMenu.Rename("关闭单手模式", "切换单手模式")
         catch
             {}
         TraySetIcon(A_AhkPath, 2)  ; 灰色图标：关闭
     }
+    SaveConfig()
 }
 
 ;

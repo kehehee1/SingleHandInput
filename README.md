@@ -80,7 +80,7 @@
 
 ### INI 配置文件
 
-配置文件 `LeftHandSymmetry.ini` 位于脚本同目录，支持手动编辑和注释，UTF-8 编码。
+配置文件 `LeftHandSymmetry.ini` 位于脚本同目录，支持手动编辑和注释，ANSI 编码（兼容 Windows IniRead/IniWrite API）。
 
 #### [Settings] 节
 
@@ -88,6 +88,7 @@
 |---|---|---|
 | `DoubleClickTime` | 220 | 双击判定时间（毫秒），越小越灵敏 |
 | `Transparency` | 220 | 窗口透明度（0=全透, 255=不透） |
+| `SymmetryActive` | 0 | 单手模式激活状态（重启后自动恢复） |
 | `PreviewVisible` | 0 | 预览窗口是否默认显示 |
 | `PreviewMode` | full | 预览模式：`full`=全键盘，`mapped`=仅映射键 |
 | `PreviewPosInitialized` | 0 | 预览窗口位置是否已初始化 |
@@ -122,6 +123,17 @@ global DOUBLE_CLICK_TIME := 220        ; 双击判定时间（毫秒）
 global SYMMETRY_HOTKEY := "Alt+R"      ; 切换单手模式的热键
 global TRANSPARENCY := 220             ; 窗口透明度（0=全透, 255=不透）
 ```
+
+## 状态持久化
+
+脚本启动时自动从 `LeftHandSymmetry.ini` 恢复以下状态：
+
+- **单手模式**：关闭时若开启，重启后自动激活单手模式，无需手动切换
+- **预览窗口**：关闭时若显示，重启后自动显示预览窗口
+- **预览模式**：保留上次选择的 `full`（全键盘）或 `mapped`（仅映射键）模式
+- **窗口位置**：拖动预览窗口后自动保存位置，重启后保持原位
+
+每次切换单手模式、显示/隐藏预览窗口、切换预览模式时，自动保存配置到 INI 文件。
 
 ## 组合键兼容
 
