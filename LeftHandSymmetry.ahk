@@ -32,6 +32,34 @@ global KeyPreviewSubControls := Map()  ; 物理键 → 映射键标签控件（�
 global lastHoveredKey := ""  ; 鼠标悬浮的键
 global AutostartEnabled := false  ; 开机启动
 
+; ===== 拖拽状态 =====
+global IsLeftButtonDown := false
+global DragStartX := 0, DragStartY := 0
+global DragWinX := 0, DragWinY := 0
+global DragThreshold := 5  ; 拖拽触发阈值（像素）
+
+; ===== 编辑状态 =====
+global EditingKey := ""         ; 当前正在编辑的物理键，""=不在编辑
+global EditingEditCtrl := 0     ; 编辑框控件
+global EditingOldValue := ""    ; 编辑前原始值
+global LastClickTime := 0  ; 上次点击时间（用于手动双击检测）
+global LastClickKey := ""  ; 上次点击的键名
+
+; ===== 调试日志 =====
+global DEBUG_LOG_PATH := A_ScriptDir . "\\LeftHandSymmetry_debug.log"
+WriteDebugLog(msg) {
+    global DEBUG_LOG_PATH
+    try {
+        file := FileOpen(DEBUG_LOG_PATH, "a")
+        if file {
+            file.WriteLine(A_Now . " " . msg)
+            file.Close()
+        }
+    } catch {
+        ; 忽略日志错误
+    }
+}
+
 ; ===== 默认映射（单向：左→右）=====
 SetDefaultKeyMapping() {
     global KeyMapping
@@ -410,7 +438,7 @@ CreatePreviewWindow() {
 
     PreviewGui.Show("Hide")
 
-    ; 支持鼠标左键拖动窗口
+    ; 鼠标左键按下：记录拖拽起始位置，双击编辑映射
     OnMessage(0x0201, OnPreviewLButtonDown)  ; WM_LBUTTONDOWN
     ; 鼠标移动：悬浮高亮
     OnMessage(0x0200, OnPreviewMouseMove)    ; WM_MOUSEMOVE
@@ -418,6 +446,10 @@ CreatePreviewWindow() {
     OnMessage(0x0205, OnPreviewRButtonUp)    ; WM_RBUTTONUP
     ; 拖动结束后保存位置
     OnMessage(0x0232, OnPreviewMoveEnd)      ; WM_EXITSIZEMOVE
+    ; 左键释放：结束拖拽
+    OnMessage(0x0202, OnPreviewLButtonUp)    ; WM_LBUTTONUP
+    ; 左键双击：编辑映射目标按键
+    OnMessage(0x0203, OnPreviewLButtonDblClk) ; WM_LBUTTONDBLCLK
 }
 
 ShowPreview() {
@@ -475,6 +507,11 @@ TogglePreviewMode(*) {
 ; ===== 重建预览窗口 =====
 RebuildPreview() {
     global PreviewGui, KeyPreviewControls, KeyPreviewColors, PreviewVisible, PreviewX, PreviewY, KeyPreviewCtrlToKey, lastHoveredKey, KeyPreviewSubControls
+    global EditingKey, EditingEditCtrl, EditingOldValue
+    ; 清理编辑状态
+    EditingKey := ""
+    EditingEditCtrl := 0
+    EditingOldValue := ""
     ; 保存当前窗口状态
     wasVisible := PreviewVisible
     oldX := PreviewX
@@ -496,14 +533,141 @@ RebuildPreview() {
 
 ; ===== 预览窗口交互 =====
 
-; 左键按下：拖动窗口
+; 左键按下：记录拖拽起始位置，不立即拖拽（由鼠标移动触发拖拽，双击触发编辑）
 OnPreviewLButtonDown(wParam, lParam, msg, hwnd) {
-    global PreviewGui
-    if (PreviewGui && hwnd) {
-        parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
-        if (parentHwnd = PreviewGui.Hwnd)
-            PostMessage(0xA1, 2, 0,, parentHwnd)  ; WM_NCLBUTTONDOWN, HTCAPTION
+    global PreviewGui, IsLeftButtonDown, DragStartX, DragStartY, DragWinX, DragWinY
+    global LastClickTime, LastClickKey, KeyPreviewHwndToKey, KeyMapping, EditingKey, DOUBLE_CLICK_TIME
+    
+    WriteDebugLog("[OnPreviewLButtonDown] ENTER hwnd=" . hwnd . " PreviewGui=" . (PreviewGui ? PreviewGui.Hwnd : 0))
+    
+    if (!PreviewGui || !hwnd) {
+        WriteDebugLog("[OnPreviewLButtonDown] EXIT: PreviewGui or hwnd is null")
+        return
     }
+    parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
+    WriteDebugLog("[OnPreviewLButtonDown] parentHwnd=" . parentHwnd . " PreviewGui.Hwnd=" . PreviewGui.Hwnd)
+    if (parentHwnd != PreviewGui.Hwnd) {
+        WriteDebugLog("[OnPreviewLButtonDown] EXIT: parentHwnd mismatch")
+        return
+    }
+
+    currentTime := A_TickCount
+
+    ; 用 ChildWindowFromPoint 获取鼠标下的子控件（hwnd 参数是主窗口句柄）
+    DllCall("GetCursorPos", "ptr", ptDbg := Buffer(8))
+    mouseXDbg := NumGet(ptDbg, 0, "int")
+    mouseYDbg := NumGet(ptDbg, 4, "int")
+    ; 转成相对于 PreviewGui 的客户区坐标
+    DllCall("ScreenToClient", "ptr", PreviewGui.Hwnd, "ptr", ptDbg)
+    clientX := NumGet(ptDbg, 0, "int")
+    clientY := NumGet(ptDbg, 4, "int")
+    ; 打包 POINT 结构到 int64
+    pt64 := (clientY << 32) | (clientX & 0xFFFFFFFF)
+    childHwnd := DllCall("ChildWindowFromPoint", "ptr", PreviewGui.Hwnd, "int64", pt64, "ptr")
+
+    WriteDebugLog("[OnPreviewLButtonDown] hwnd=" . hwnd . " childHwnd(ChildWindowFromPoint)=" . childHwnd . " KeyPreviewHwndToKey.Has(hwnd)=" . KeyPreviewHwndToKey.Has(hwnd) . " KeyPreviewHwndToKey.Has(child)=" . KeyPreviewHwndToKey.Has(childHwnd))
+
+    ; 使用 ChildWindowFromPoint 的结果
+    targetHwnd := childHwnd
+    if (!KeyPreviewHwndToKey.Has(targetHwnd)) {
+        ; 如果子控件也找不到，尝试用 hwnd
+        targetHwnd := hwnd
+        WriteDebugLog("[OnPreviewLButtonDown] FALLBACK: using hwnd=" . targetHwnd)
+    }
+
+    ; 手动检测双击：Text 控件没有 CS_DBLCLKS 样式，不会发 WM_LBUTTONDBLCLK
+    if (KeyPreviewHwndToKey.Has(targetHwnd)) {
+        keyName := KeyPreviewHwndToKey[targetHwnd]
+        WriteDebugLog("[OnPreviewLButtonDown] keyName=" . keyName . " LastClickKey=" . LastClickKey . " LastClickTime=" . LastClickTime . " currentTime=" . currentTime . " diff=" . (currentTime - LastClickTime) . " threshold=" . DOUBLE_CLICK_TIME)
+        
+        if (keyName = LastClickKey && (currentTime - LastClickTime) <= DOUBLE_CLICK_TIME) {
+            WriteDebugLog("[OnPreviewLButtonDown] DOUBLE-CLICK DETECTED! keyName=" . keyName)
+            ; 双击检测到：编辑映射
+            LastClickKey := ""
+            LastClickTime := 0
+            IsLeftButtonDown := false
+            if (KeyMapping.Has(keyName)) {
+                WriteDebugLog("[OnPreviewLButtonDown] Starting edit for key=" . keyName)
+                if (EditingKey != "")
+                    CancelKeyEdit()
+                StartKeyEdit(keyName)
+            } else {
+                WriteDebugLog("[OnPreviewLButtonDown] WARNING: keyName=" . keyName . " not in KeyMapping")
+            }
+            return
+        }
+        LastClickKey := keyName
+    } else {
+        WriteDebugLog("[OnPreviewLButtonDown] WARNING: targetHwnd=" . targetHwnd . " not found in KeyPreviewHwndToKey! mapSize=" . KeyPreviewHwndToKey.Count)
+        LastClickKey := ""
+    }
+    LastClickTime := currentTime
+    WriteDebugLog("[OnPreviewLButtonDown] Record click: LastClickKey=" . LastClickKey . " LastClickTime=" . LastClickTime)
+
+    ; 记录拖拽起始位置
+    DllCall("GetCursorPos", "ptr", pt := Buffer(8))
+    DragStartX := NumGet(pt, 0, "int")
+    DragStartY := NumGet(pt, 4, "int")
+    PreviewGui.GetPos(&DragWinX, &DragWinY)
+    IsLeftButtonDown := true
+}
+
+; 左键释放：结束拖拽，保存窗口位置
+OnPreviewLButtonUp(wParam, lParam, msg, hwnd) {
+    global IsLeftButtonDown, PreviewGui, PreviewX, PreviewY, PreviewPosInitialized, DragStartX, DragStartY
+    IsLeftButtonDown := false
+
+    ; 如果发生过拖拽（鼠标位置有变化），保存窗口位置
+    if (PreviewGui) {
+        DllCall("GetCursorPos", "ptr", pt := Buffer(8))
+        mouseX := NumGet(pt, 0, "int")
+        mouseY := NumGet(pt, 4, "int")
+        dx := mouseX - DragStartX
+        dy := mouseY - DragStartY
+        if (Abs(dx) > 2 || Abs(dy) > 2) {
+            PreviewGui.GetPos(&PreviewX, &PreviewY)
+            PreviewPosInitialized := true
+            SaveConfig()
+        }
+    }
+}
+
+; 左键双击：编辑映射目标按键
+OnPreviewLButtonDblClk(wParam, lParam, msg, hwnd) {
+    global PreviewGui, KeyPreviewHwndToKey, KeyMapping, EditingKey
+    if (!PreviewGui)
+        return
+
+    WriteDebugLog("[OnPreviewLButtonDblClk] ENTER hwnd=" . hwnd)
+
+    ; 用 ChildWindowFromPoint 获取鼠标下的子控件
+    DllCall("GetCursorPos", "ptr", ptDbg := Buffer(8))
+    mouseX := NumGet(ptDbg, 0, "int")
+    mouseY := NumGet(ptDbg, 4, "int")
+    DllCall("ScreenToClient", "ptr", PreviewGui.Hwnd, "ptr", ptDbg)
+    clientX := NumGet(ptDbg, 0, "int")
+    clientY := NumGet(ptDbg, 4, "int")
+    pt64 := (clientY << 32) | (clientX & 0xFFFFFFFF)
+    childHwnd := DllCall("ChildWindowFromPoint", "ptr", PreviewGui.Hwnd, "int64", pt64, "ptr")
+
+    WriteDebugLog("[OnPreviewLButtonDblClk] childHwnd=" . childHwnd . " Has(child)=" . KeyPreviewHwndToKey.Has(childHwnd))
+
+    if (!KeyPreviewHwndToKey.Has(childHwnd)) {
+        WriteDebugLog("[OnPreviewLButtonDblClk] EXIT: child not found")
+        return
+    }
+    keyName := KeyPreviewHwndToKey[childHwnd]
+    WriteDebugLog("[OnPreviewLButtonDblClk] DOUBLE-CLICK keyName=" . keyName)
+
+    if (!KeyMapping.Has(keyName)) {
+        WriteDebugLog("[OnPreviewLButtonDblClk] EXIT: key not in KeyMapping")
+        return
+    }
+    ; 如果正在编辑中，先取消
+    if (EditingKey != "")
+        CancelKeyEdit()
+    StartKeyEdit(keyName)
+    WriteDebugLog("[OnPreviewLButtonDblClk] Edit started for key=" . keyName)
 }
 
 ; 右键按下：弹出上下文菜单
@@ -530,9 +694,10 @@ OnPreviewMoveEnd(wParam, lParam, msg, hwnd) {
     }
 }
 
-; 鼠标移动：悬浮高亮
+; 鼠标移动：悬浮高亮 + 拖拽窗口
 OnPreviewMouseMove(wParam, lParam, msg, hwnd) {
     global PreviewGui, KeyPreviewControls, KeyPreviewSubControls, KeyPreviewHwndToKey, lastHoveredKey, KeyMapping
+    global IsLeftButtonDown, DragStartX, DragStartY, DragWinX, DragWinY, DragThreshold
 
     if (!PreviewGui)
         return
@@ -541,6 +706,19 @@ OnPreviewMouseMove(wParam, lParam, msg, hwnd) {
     parentHwnd := DllCall("GetAncestor", "ptr", hwnd, "uint", 2, "ptr")
     if (parentHwnd != PreviewGui.Hwnd)
         return
+
+    ; 拖拽处理：左键按住时移动窗口
+    if (IsLeftButtonDown) {
+        DllCall("GetCursorPos", "ptr", pt := Buffer(8))
+        mouseX := NumGet(pt, 0, "int")
+        mouseY := NumGet(pt, 4, "int")
+        dx := mouseX - DragStartX
+        dy := mouseY - DragStartY
+        if (Abs(dx) > DragThreshold || Abs(dy) > DragThreshold) {
+            PreviewGui.Move(DragWinX + dx, DragWinY + dy)
+        }
+        return  ; 拖拽时不处理悬浮高亮
+    }
 
     ; 获取光标在预览窗口客户区的位置
     pt := Buffer(8)
@@ -596,6 +774,102 @@ RestoreKeyFont(keyName) {
         subCtrl := KeyPreviewSubControls[keyName]
         subCtrl.SetFont("s12 cB0D4FF")
     }
+}
+
+; ===== 双击编辑映射目标按键 =====
+; 开始编辑：在键位上创建编辑框
+StartKeyEdit(keyName) {
+    global PreviewGui, KeyMapping, EditingKey, EditingEditCtrl, EditingOldValue, KeyPreviewControls
+
+    EditingKey := keyName
+    EditingOldValue := KeyMapping[keyName]
+
+    ; 获取原键控件位置
+    ctrl := KeyPreviewControls[keyName]
+    ctrl.GetPos(&cx, &cy, &cw, &ch)
+
+    ; 创建编辑框覆盖在键位上
+    EditingEditCtrl := PreviewGui.Add("Edit",
+        "x" cx " y" cy " w" cw " h" ch " -Multi +Center cFFFFFF Background0066CC")
+    EditingEditCtrl.Value := KeyMapping[keyName]
+    EditingEditCtrl.Focus()
+    Send("^a")  ; 选中全部文本
+
+    ; 注册键盘消息处理（拦截 Enter/Esc）
+    OnMessage(0x0100, OnEditingKeyDown)
+}
+
+; 编辑时键盘消息处理
+OnEditingKeyDown(wParam, lParam, msg, hwnd) {
+    global EditingKey, EditingEditCtrl
+
+    if (EditingKey = "" || !EditingEditCtrl)
+        return
+
+    ; 只处理编辑框自身的键盘消息
+    if (hwnd != EditingEditCtrl.Hwnd)
+        return
+
+    vk := wParam & 0xFFFF
+
+    if (vk = 0x0D) {  ; Enter
+        ConfirmKeyEdit()
+        return 0  ; 阻止默认处理
+    } else if (vk = 0x1B) {  ; Esc
+        CancelKeyEdit()
+        return 0  ; 阻止默认处理
+    }
+
+    return
+}
+
+; 确认编辑：更新映射，重建预览，保存配置
+ConfirmKeyEdit() {
+    global EditingKey, EditingEditCtrl, KeyMapping
+
+    if (EditingKey = "" || !EditingEditCtrl)
+        return
+
+    newValue := Trim(EditingEditCtrl.Value)
+
+    if (newValue = "") {
+        ; 清空则移除映射
+        KeyMapping.Delete(EditingKey)
+    } else {
+        ; 更新映射
+        KeyMapping[EditingKey] := newValue
+    }
+
+    ; 清理编辑状态
+    FinishKeyEdit()
+
+    ; 重建预览窗口
+    RebuildPreview()
+
+    ; 保存配置
+    SaveConfig()
+}
+
+; 取消编辑：恢复原始值
+CancelKeyEdit() {
+    FinishKeyEdit()
+}
+
+; 清理编辑状态
+FinishKeyEdit() {
+    global PreviewGui, EditingKey, EditingEditCtrl, EditingOldValue
+
+    ; 移除键盘消息处理
+    OnMessage(0x0100, OnEditingKeyDown, 0)
+
+    ; 隐藏编辑框（重建预览时自动销毁）
+    if (EditingEditCtrl) {
+        EditingEditCtrl.Visible := false
+        EditingEditCtrl := 0
+    }
+
+    EditingKey := ""
+    EditingOldValue := ""
 }
 
 ; 预览窗口右键菜单
