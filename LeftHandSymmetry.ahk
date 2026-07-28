@@ -590,14 +590,9 @@ OnPreviewLButtonDown(wParam, lParam, msg, hwnd) {
             LastClickKey := ""
             LastClickTime := 0
             IsLeftButtonDown := false
-            if (KeyMapping.Has(keyName)) {
-                WriteDebugLog("[OnPreviewLButtonDown] Starting edit for key=" . keyName)
-                if (EditingKey != "")
-                    CancelKeyEdit()
-                StartKeyEdit(keyName)
-            } else {
-                WriteDebugLog("[OnPreviewLButtonDown] WARNING: keyName=" . keyName . " not in KeyMapping")
-            }
+            if (EditingKey != "")
+                CancelKeyEdit()
+            StartKeyEdit(keyName)
             return
         }
         LastClickKey := keyName
@@ -663,10 +658,6 @@ OnPreviewLButtonDblClk(wParam, lParam, msg, hwnd) {
     keyName := KeyPreviewHwndToKey[childHwnd]
     WriteDebugLog("[OnPreviewLButtonDblClk] DOUBLE-CLICK keyName=" . keyName)
 
-    if (!KeyMapping.Has(keyName)) {
-        WriteDebugLog("[OnPreviewLButtonDblClk] EXIT: key not in KeyMapping")
-        return
-    }
     ; 如果正在编辑中，先取消
     if (EditingKey != "")
         CancelKeyEdit()
@@ -786,7 +777,7 @@ StartKeyEdit(keyName) {
     global PreviewGui, KeyMapping, EditingKey, EditingEditCtrl, EditingOldValue, KeyPreviewControls
 
     EditingKey := keyName
-    EditingOldValue := KeyMapping[keyName]
+    EditingOldValue := KeyMapping.Get(keyName, "")
 
     ; 获取原键控件位置
     ctrl := KeyPreviewControls[keyName]
@@ -795,7 +786,7 @@ StartKeyEdit(keyName) {
     ; 创建编辑框覆盖在键位上
     EditingEditCtrl := PreviewGui.Add("Edit",
         "x" cx " y" cy " w" cw " h" ch " -Multi +Center cFFFFFF Background0066CC")
-    EditingEditCtrl.Value := KeyMapping[keyName]
+    EditingEditCtrl.Value := KeyMapping.Get(keyName, "")
     EditingEditCtrl.Focus()
     Send("^a")  ; 选中全部文本
 
@@ -839,9 +830,20 @@ ConfirmKeyEdit() {
     if (newValue = "") {
         ; 清空则移除映射
         KeyMapping.Delete(EditingKey)
+        ; 注销热键
+        try
+            Hotkey("~$*" EditingKey, "Off")
+        catch
+            {}
     } else {
         ; 更新映射
+        wasNew := !KeyMapping.Has(EditingKey)
         KeyMapping[EditingKey] := newValue
+        ; 如果是新增映射，注册热键
+        if (wasNew) {
+            fn := KeyHandler.Bind(EditingKey)
+            Hotkey("~$*" EditingKey, fn)
+        }
     }
 
     ; 清理编辑状态
