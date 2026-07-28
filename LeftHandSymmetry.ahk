@@ -669,7 +669,7 @@ ResetKeyMapping(*) {
 
 ; ===== 重新加载配置 =====
 ReloadConfig(*) {
-    global KeyMapping, PreviewGui, KeyPreviewControls, KeyPreviewColors
+    global KeyMapping, PreviewGui, KeyPreviewControls, KeyPreviewColors, DOUBLE_CLICK_TIME, TRANSPARENCY
     if !FileExist(CONFIG_PATH) {
         TrayTip "无配置", "未找到配置文件", 1
         SetTimer(DismissTrayTip, -2000)
@@ -679,9 +679,31 @@ ReloadConfig(*) {
     oldKeys := []
     for k, v in KeyMapping
         oldKeys.Push(k)
-    ; 重新加载配置
+
+    ; 只重新加载 KeyMapping 和基础设置，不覆盖运行时状态
+    ; 加载自定义按键映射
     KeyMapping := Map()
-    LoadConfig()
+    try
+        mappingStr := IniRead(CONFIG_PATH, "KeyMapping")
+    catch
+        mappingStr := ""
+    if (mappingStr != "") {
+        Loop Parse, mappingStr, "`n"
+        {
+            if A_LoopField = ""
+                continue
+            eqPos := InStr(A_LoopField, "=")
+            if (eqPos > 0) {
+                srcKey := SubStr(A_LoopField, 1, eqPos - 1)
+                tgtKey := SubStr(A_LoopField, eqPos + 1)
+                KeyMapping[srcKey] := tgtKey
+            }
+        }
+    }
+    ; 加载基础设置（双击时间、透明度）
+    DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
+    TRANSPARENCY := Integer(IniRead(CONFIG_PATH, "Settings", "Transparency", TRANSPARENCY))
+
     ; 关闭旧映射中已移除键的热键
     for idx, k in oldKeys {
         if !KeyMapping.Has(k)
@@ -694,7 +716,7 @@ ReloadConfig(*) {
     }
     ; 重建预览窗口
     RebuildPreview()
-    TrayTip "已重新加载", "配置已从 INI 文件重新加载", 1
+    TrayTip "已重新加载", "按键映射和基础设置已从 INI 重新加载", 1
     SetTimer(DismissTrayTip, -2000)
 }
 
