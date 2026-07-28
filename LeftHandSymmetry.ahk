@@ -30,6 +30,7 @@ global KeyPreviewCtrlToKey := Map()  ; 控件 → 物理键（反向查找）
 global KeyPreviewHwndToKey := Map()  ; 控件Hwnd → 物理键
 global KeyPreviewSubControls := Map()  ; 物理键 → 映射键标签控件（用于悬浮放大）
 global lastHoveredKey := ""  ; 鼠标悬浮的键
+global AutostartEnabled := false  ; 开机启动
 
 ; ===== 默认映射（单向：左→右）=====
 SetDefaultKeyMapping() {
@@ -50,7 +51,7 @@ SetDefaultKeyMapping() {
 global CONFIG_PATH := A_ScriptDir . "\LeftHandSymmetry.ini"
 
 LoadConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, SymmetryActive, KeyMapping
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, SymmetryActive, AutostartEnabled, KeyMapping
     if !FileExist(CONFIG_PATH)
         return
     DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
@@ -97,10 +98,14 @@ LoadConfig() {
         SymmetryActive := (IniRead(CONFIG_PATH, "Settings", "SymmetryActive", "0") = "1")
     catch
         SymmetryActive := false
+    try
+        AutostartEnabled := (IniRead(CONFIG_PATH, "Settings", "AutostartEnabled", "0") = "1")
+    catch
+        AutostartEnabled := false
 }
 
 SaveConfig() {
-    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, SymmetryActive, KeyMapping
+    global DOUBLE_CLICK_TIME, TRANSPARENCY, PreviewX, PreviewY, PreviewPosInitialized, PreviewVisible, PreviewMode, SymmetryActive, AutostartEnabled, KeyMapping
     ; 注意：必须用 ANSI 编码，否则 IniRead 无法读取（GetPrivateProfileString 不支持 UTF-8）
     file := FileOpen(CONFIG_PATH, "w")
     if !file
@@ -113,6 +118,7 @@ SaveConfig() {
     file.WriteLine("PreviewPosInitialized=" . (PreviewPosInitialized ? "1" : "0"))
     file.WriteLine("PreviewVisible=" . (PreviewVisible ? "1" : "0"))
     file.WriteLine("PreviewMode=" . PreviewMode)
+    file.WriteLine("AutostartEnabled=" . (AutostartEnabled ? "1" : "0"))
     if (PreviewPosInitialized) {
         file.WriteLine("PreviewX=" . PreviewX)
         file.WriteLine("PreviewY=" . PreviewY)
@@ -150,6 +156,16 @@ if (SymmetryActive) {
     if (PreviewVisible)
         ShowPreview()
 }
+; 确保开机启动快捷方式存在
+if (AutostartEnabled) {
+    startupPath := A_Startup . Chr(92) . "LeftHandSymmetry.lnk"
+    if !FileExist(startupPath) {
+        targetPath := A_IsCompiled ? A_ScriptFullPath : A_AhkPath
+        workingDir := A_ScriptDir
+        args := A_IsCompiled ? "" : Chr(34) . A_ScriptFullPath . Chr(34)
+        FileCreateShortcut(targetPath, startupPath, workingDir, args)
+    }
+}
 
 ; ===== 托盘菜单 =====
 ; 先清空所有菜单项，再添加自定义菜单
@@ -163,6 +179,7 @@ A_TrayMenu.Add()
 A_TrayMenu.Add("打开配置", OpenConfig)
 A_TrayMenu.Add("重置默认映射", ResetKeyMapping)
 A_TrayMenu.Add("重新加载配置", ReloadConfig)
+A_TrayMenu.Add("开机启动", ToggleAutostart)
 A_TrayMenu.Add()
 A_TrayMenu.Add("打开脚本", OpenScript)
 A_TrayMenu.Add("重启", RestartScript)
@@ -173,6 +190,13 @@ A_TrayMenu.Default := "切换单手模式"
 if (SymmetryActive) {
     try
         A_TrayMenu.Rename("切换单手模式", "关闭单手模式")
+    catch
+        {}
+}
+; 设置开机启动菜单勾选状态
+if (AutostartEnabled) {
+    try
+        A_TrayMenu.Check("开机启动")
     catch
         {}
 }
@@ -209,6 +233,31 @@ ToggleSymmetry(*) {
             {}
         TraySetIcon(A_AhkPath, 2)  ; 灰色图标：关闭
     }
+    SaveConfig()
+}
+
+; ===== 开机启动切换 =====
+ToggleAutostart(*) {
+    global AutostartEnabled
+    AutostartEnabled := !AutostartEnabled
+
+    startupPath := A_Startup . Chr(92) . "LeftHandSymmetry.lnk"
+    if (AutostartEnabled) {
+        ; 创建快捷方式到启动文件夹
+        targetPath := A_IsCompiled ? A_ScriptFullPath : A_AhkPath
+        workingDir := A_ScriptDir
+        args := A_IsCompiled ? "" : Chr(34) . A_ScriptFullPath . Chr(34)
+        FileCreateShortcut(targetPath, startupPath, workingDir, args)
+        A_TrayMenu.Check("开机启动")
+        TrayTip "开机启动", "已开启`n已添加至启动文件夹", 1
+    } else {
+        ; 删除快捷方式
+        if FileExist(startupPath)
+            FileDelete(startupPath)
+        A_TrayMenu.Uncheck("开机启动")
+        TrayTip "开机启动", "已关闭", 1
+    }
+    SetTimer(DismissTrayTip, -2000)
     SaveConfig()
 }
 
@@ -669,7 +718,7 @@ ResetKeyMapping(*) {
 
 ; ===== 重新加载配置 =====
 ReloadConfig(*) {
-    global KeyMapping, PreviewGui, KeyPreviewControls, KeyPreviewColors, DOUBLE_CLICK_TIME, TRANSPARENCY
+    global KeyMapping, PreviewGui, KeyPreviewControls, KeyPreviewColors, DOUBLE_CLICK_TIME, TRANSPARENCY, AutostartEnabled
     if !FileExist(CONFIG_PATH) {
         TrayTip "无配置", "未找到配置文件", 1
         SetTimer(DismissTrayTip, -2000)
@@ -700,9 +749,13 @@ ReloadConfig(*) {
             }
         }
     }
-    ; 加载基础设置（双击时间、透明度）
+    ; 加载基础设置（双击时间、透明度、开机启动）
     DOUBLE_CLICK_TIME := Integer(IniRead(CONFIG_PATH, "Settings", "DoubleClickTime", DOUBLE_CLICK_TIME))
     TRANSPARENCY := Integer(IniRead(CONFIG_PATH, "Settings", "Transparency", TRANSPARENCY))
+    try
+        AutostartEnabled := (IniRead(CONFIG_PATH, "Settings", "AutostartEnabled", "0") = "1")
+    catch
+        AutostartEnabled := false
 
     ; 关闭旧映射中已移除键的热键
     for idx, k in oldKeys {
@@ -716,6 +769,11 @@ ReloadConfig(*) {
     }
     ; 重建预览窗口
     RebuildPreview()
+    ; 更新开机启动菜单状态
+    if (AutostartEnabled)
+        A_TrayMenu.Check("开机启动")
+    else
+        A_TrayMenu.Uncheck("开机启动")
     TrayTip "已重新加载", "按键映射和基础设置已从 INI 重新加载", 1
     SetTimer(DismissTrayTip, -2000)
 }
