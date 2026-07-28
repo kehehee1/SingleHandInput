@@ -279,10 +279,10 @@ CreatePreviewWindow() {
 
     ; 键盘布局（左手区域，按行排列，每行居中）
     keyboardLayout := [
-        ["``", "1", "2", "3", "4", "5"],
-        ["q", "w", "e", "r", "t", "y"],
-        ["a", "s", "d", "f", "g", "h"],
-        ["z", "x", "c", "v", "b", "n", "m"]
+        ["``", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "="],
+        ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "[", "]", "\"],
+        ["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "'"],
+        ["z", "x", "c", "v", "b", "n", "m", ",", ".", "/"]
     ]
 
     cellW := 56, cellH := 52  ; 键帽尺寸
@@ -377,8 +377,8 @@ ShowPreview() {
         if !PreviewPosInitialized {
             ; 首次显示：右下角
             MonitorGetWorkArea(1, &workL, &workT, &workR, &workB)
-            PreviewX := workR - 460 - 20
-            PreviewY := workB - 250 - 20
+            PreviewX := workR - 812 - 20
+            PreviewY := workB - 260 - 20
             PreviewPosInitialized := true
         }
         PreviewGui.Show("NA x" PreviewX " y" PreviewY)
