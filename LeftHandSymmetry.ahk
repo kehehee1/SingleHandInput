@@ -880,7 +880,12 @@ FinishKeyEdit() {
 
 ; 预览窗口右键菜单
 ShowPreviewContextMenu(*) {
+    global PreviewMode
     previewMenu := Menu()
+    modeLabel := (PreviewMode = "full") ? "切换显示模式（仅映射键）" : "切换显示模式（全键盘）"
+    previewMenu.Add(modeLabel, TogglePreviewMode)
+    previewMenu.Add("重置默认映射", ResetKeyMapping)
+    previewMenu.Add()
     previewMenu.Add("透明度 50%", SetTransparency50)
     previewMenu.Add("透明度 70%", SetTransparency70)
     previewMenu.Add("透明度 90%", SetTransparency90)
