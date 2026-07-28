@@ -7,6 +7,8 @@
 - 修复 INI 文件编码兼容性（ANSI 替代 UTF-8，兼容 Windows IniRead API）
 - 修复 `ToggleSymmetry()` 激活时预览窗不显示的问题
 - 修复 `LoadConfig()` 读取 `SymmetryActive`/`PreviewMode` 全局变量问题
+- 修复 RebuildPreview 中控件映射残留导致 'The control is destroyed' 错误
+- 修复新添加的映射不能立即生效（动态注册/注销热键）
 
 ### 优化
 - 预览窗口重新设计为简洁虚拟键盘布局
@@ -18,6 +20,8 @@
 ### 新增
 - 托盘菜单：打开脚本、重启、打开配置、重置默认映射
 - 清除 AutoHotkey 标准托盘菜单，实现完全自定义菜单
+- 双击未映射按键添加新的映射关系
+- 预览窗口鼠标拖拽功能
 
 ---
 
